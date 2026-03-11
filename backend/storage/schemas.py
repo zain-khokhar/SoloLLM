@@ -7,6 +7,7 @@ from typing import Optional
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     conversation_id: Optional[str] = None
+    thread_id: Optional[str] = None
     model: Optional[str] = None
     system_prompt: Optional[str] = None
     temperature: Optional[float] = None
@@ -144,3 +145,26 @@ class AgentSettings(BaseModel):
     agent_enabled: Optional[bool] = None
     agent_max_steps: Optional[int] = None
     agent_temperature: Optional[float] = None
+
+
+# ── Threads ─────────────────────────────────────────────────
+
+class ThreadCreate(BaseModel):
+    title: str = "New Thread"
+    system_prompt: Optional[str] = ""
+    context_mode: str = "isolated"
+
+
+class ThreadUpdate(BaseModel):
+    title: Optional[str] = None
+    system_prompt: Optional[str] = None
+    context_mode: Optional[str] = None
+
+
+class ThreadSettingsUpdate(BaseModel):
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
+    rag_enabled: Optional[bool] = None
+    rag_top_k: Optional[int] = None
+    compression_enabled: Optional[bool] = None
+    memory_layers: Optional[int] = None

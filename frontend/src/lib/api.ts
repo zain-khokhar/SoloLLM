@@ -21,6 +21,12 @@ import {
   ImportResult,
   RuntimeStatus,
   ModelCatalogResponse,
+  Thread,
+  ThreadSettings,
+  ThreadContextPage,
+  DocumentInfo,
+  Citation,
+  RAGStats,
 } from "@/types";
 
 const API_BASE = "/api";
@@ -70,7 +76,7 @@ export async function listConversations(): Promise<Conversation[]> {
 
 export async function getConversation(
   id: string
-): Promise<{ conversation: Conversation; messages: Message[] }> {
+): Promise<{ conversation: Conversation; messages: Message[]; threads: Thread[]; default_thread_id: string | null }> {
   return fetchJSON(`/conversations/${id}`);
 }
 
@@ -280,11 +286,13 @@ export interface ChatStreamCallbacks {
   onDone: (data: {
     message_id: string;
     conversation_id: string;
+    thread_id: string | null;
     tokens_used: number;
   }) => void;
   onTruncated: (data: {
     message_id: string;
     conversation_id: string;
+    thread_id: string | null;
     tokens_used: number;
     reason: string;
     confidence: number;
@@ -297,6 +305,7 @@ export function streamChat(
   params: {
     message: string;
     conversation_id?: string;
+    thread_id?: string;
     model?: string;
     system_prompt?: string;
     temperature?: number;
@@ -824,4 +833,164 @@ export async function importSettings(file: File): Promise<{ success: boolean; im
 
 export async function clearAgentMemories(): Promise<{ cleared: number }> {
   return fetchJSON("/agent/memory", { method: "DELETE" });
+}
+
+// ── Threads API ────────────────────────────────────────────
+
+export async function listThreads(conversationId: string): Promise<Thread[]> {
+  const data = await fetchJSON<{ threads: Thread[] }>(
+    `/conversations/${conversationId}/threads`
+  );
+  return data.threads;
+}
+
+export async function createThread(
+  conversationId: string,
+  title: string = "New Thread",
+  systemPrompt: string = "",
+  contextMode: "isolated" | "shared" = "isolated"
+): Promise<Thread> {
+  const data = await fetchJSON<{ thread: Thread }>(
+    `/conversations/${conversationId}/threads`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        system_prompt: systemPrompt,
+        context_mode: contextMode,
+      }),
+    }
+  );
+  return data.thread;
+}
+
+export async function getThread(
+  threadId: string
+): Promise<{ thread: Thread; messages: Message[]; settings: ThreadSettings }> {
+  return fetchJSON(`/threads/${threadId}`);
+}
+
+export async function updateThread(
+  threadId: string,
+  data: Partial<Pick<Thread, "title" | "system_prompt" | "context_mode">>
+): Promise<Thread> {
+  const res = await fetchJSON<{ thread: Thread }>(`/threads/${threadId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return res.thread;
+}
+
+export async function deleteThread(threadId: string): Promise<void> {
+  await fetchJSON(`/threads/${threadId}`, { method: "DELETE" });
+}
+
+export async function getThreadSettings(
+  threadId: string
+): Promise<ThreadSettings> {
+  const data = await fetchJSON<{ settings: ThreadSettings }>(
+    `/threads/${threadId}/settings`
+  );
+  return data.settings;
+}
+
+export async function updateThreadSettings(
+  threadId: string,
+  settings: Partial<ThreadSettings>
+): Promise<ThreadSettings> {
+  const data = await fetchJSON<{ settings: ThreadSettings }>(
+    `/threads/${threadId}/settings`,
+    {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }
+  );
+  return data.settings;
+}
+
+export async function attachDocumentToThread(
+  threadId: string,
+  documentId: string
+): Promise<void> {
+  await fetchJSON(`/threads/${threadId}/documents/${documentId}`, {
+    method: "POST",
+  });
+}
+
+export async function getThreadDocuments(
+  threadId: string
+): Promise<{ documents: { id: string; thread_id: string; document_id: string; attached_at: string }[] }> {
+  return fetchJSON(`/threads/${threadId}/documents`);
+}
+
+export async function detachDocumentFromThread(
+  threadId: string,
+  documentId: string
+): Promise<void> {
+  await fetchJSON(`/threads/${threadId}/documents/${documentId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getThreadContext(
+  threadId: string,
+  activeOnly: boolean = true
+): Promise<{ pages: ThreadContextPage[]; thread_id: string }> {
+  return fetchJSON(
+    `/threads/${threadId}/context?active_only=${activeOnly}`
+  );
+}
+
+// ── Documents API ──────────────────────────────────────────
+
+export async function uploadDocument(
+  file: File,
+  workspaceId: string = "default"
+): Promise<{ success: boolean; document_id: string; filename: string; title: string; file_type: string; chunk_count: number; page_count: number; content_length: number; workspace_id: string; errors?: string[] }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("workspace_id", workspaceId);
+  const res = await fetch(`${API_BASE}/documents/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function listDocuments(
+  workspaceId: string = "default"
+): Promise<DocumentInfo[]> {
+  const data = await fetchJSON<{ documents: DocumentInfo[] }>(
+    `/documents/list?workspace_id=${encodeURIComponent(workspaceId)}`
+  );
+  return data.documents;
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  await fetchJSON(`/documents/${documentId}`, { method: "DELETE" });
+}
+
+export async function queryDocuments(
+  query: string,
+  workspaceId: string = "default",
+  topK: number = 5
+): Promise<{ citations: Citation[]; context_text: string; source_count: number }> {
+  return fetchJSON(`/documents/query`, {
+    method: "POST",
+    body: JSON.stringify({
+      query,
+      workspace_id: workspaceId,
+      top_k: topK,
+    }),
+  });
+}
+
+export async function getRAGStats(
+  workspaceId: string = "default"
+): Promise<RAGStats> {
+  return fetchJSON(`/documents/stats/${encodeURIComponent(workspaceId)}`);
 }

@@ -130,11 +130,16 @@ class KeywordIndex:
         workspace_id: str = "default",
         top_k: int = 10,
         document_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> list[KeywordResult]:
         """
         Search using BM25 ranking.
 
         FTS5's built-in bm25() function provides relevance scoring.
+
+        Args:
+            document_id: Filter to a single document (legacy)
+            document_ids: Filter to multiple documents (thread-scoped)
         """
         if not query.strip():
             return []
@@ -144,7 +149,24 @@ class KeywordIndex:
 
         db = await self._get_db()
         try:
-            if document_id:
+            if document_ids:
+                # Thread-scoped: only search within these specific documents
+                placeholders = ",".join("?" for _ in document_ids)
+                cursor = await db.execute(
+                    f"""SELECT f.chunk_id, f.document_id, f.content,
+                              f.document_title, f.section_title,
+                              m.page_number, m.chunk_index,
+                              bm25(chunks_fts, 0, 0, 0, 1, 0, 0) as score
+                       FROM chunks_fts f
+                       LEFT JOIN chunks_meta m ON f.chunk_id = m.chunk_id
+                       WHERE chunks_fts MATCH ?
+                       AND f.workspace_id = ?
+                       AND f.document_id IN ({placeholders})
+                       ORDER BY score
+                       LIMIT ?""",
+                    (safe_query, workspace_id, *document_ids, top_k),
+                )
+            elif document_id:
                 cursor = await db.execute(
                     """SELECT f.chunk_id, f.document_id, f.content,
                               f.document_title, f.section_title,

@@ -60,6 +60,7 @@ class HybridRetriever:
         workspace_id: str = "default",
         top_k: int = 10,
         document_id: str | None = None,
+        document_ids: list[str] | None = None,
         vector_top_k: int = 20,
         keyword_top_k: int = 20,
     ) -> list[RetrievalResult]:
@@ -71,6 +72,7 @@ class HybridRetriever:
             workspace_id: Workspace to search in
             top_k: Number of final results to return
             document_id: Optional filter to a specific document
+            document_ids: Optional filter to multiple documents (thread-scoped)
             vector_top_k: Number of vector results to fetch before fusion
             keyword_top_k: Number of keyword results to fetch before fusion
         """
@@ -83,6 +85,7 @@ class HybridRetriever:
             workspace_id=workspace_id,
             top_k=vector_top_k,
             document_id=document_id,
+            document_ids=document_ids,
         )
 
         keyword_results = await keyword_index.search(
@@ -90,6 +93,7 @@ class HybridRetriever:
             workspace_id=workspace_id,
             top_k=keyword_top_k,
             document_id=document_id,
+            document_ids=document_ids,
         )
 
         # Fuse results using RRF

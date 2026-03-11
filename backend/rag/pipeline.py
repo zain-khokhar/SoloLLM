@@ -222,16 +222,21 @@ class RAGPipeline:
         query: str,
         workspace_id: str = "default",
         top_k: int = 5,
+        document_ids: list[str] | None = None,
     ) -> list[RetrievalResult]:
         """
         Retrieve chunks for use in the distillation pipeline.
 
         Returns raw RetrievalResult objects (not CitedContext).
+
+        Args:
+            document_ids: Filter to only these documents (thread-scoped)
         """
         results = await hybrid_retriever.retrieve(
             query=query,
             workspace_id=workspace_id,
             top_k=top_k * 3,
+            document_ids=document_ids,
         )
 
         if not results:
@@ -247,12 +252,16 @@ class RAGPipeline:
         top_k: int = 5,
         conversation_messages: list[dict] | None = None,
         base_system_prompt: str = "",
+        document_ids: list[str] | None = None,
     ) -> dict:
         """
         Full distillation-enhanced RAG query.
 
         Runs the distillation pipeline: decompose → retrieve → dedup →
         multi-hop → compress → score confidence → adaptive prompt.
+
+        Args:
+            document_ids: Filter retrieval to only these documents (thread-scoped)
 
         Returns:
             dict with keys: system_prompt, confidence, query_type, sub_queries,
@@ -261,7 +270,7 @@ class RAGPipeline:
         from core.distillation import distillation_pipeline
 
         async def _retriever(q, ws, k):
-            return await self.retrieve_for_distillation(q, ws, k)
+            return await self.retrieve_for_distillation(q, ws, k, document_ids=document_ids)
 
         result = await distillation_pipeline.process(
             query=query,

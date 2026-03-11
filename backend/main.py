@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from storage.database import init_db
-from api import chat, models, conversations, system, distillation, documents, dashboard, graph, agent, openai_compat, export_import
+from api import chat, models, conversations, system, distillation, documents, dashboard, graph, agent, openai_compat, export_import, threads
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -33,6 +33,24 @@ async def lifespan(app: FastAPI):
                 logger.warning("Ollama could not be started — models won't be available until Ollama is running")
         except Exception as e:
             logger.warning(f"Ollama auto-start failed: {e}")
+
+    # Auto-detect default model: if the configured one isn't installed, pick the first available
+    try:
+        from core.inference import ollama_client
+        from storage.database import get_setting, set_setting
+        installed = await ollama_client.list_models()
+        installed_names = [m["name"] for m in installed]
+        db_default = await get_setting("default_model")
+        current_default = db_default or settings.default_model
+        if installed_names and current_default not in installed_names:
+            new_default = installed_names[0]
+            await set_setting("default_model", new_default)
+            settings.default_model = new_default
+            logger.info(f"Default model '{current_default}' not installed — switched to '{new_default}'")
+        elif db_default and db_default in installed_names:
+            settings.default_model = db_default
+    except Exception as e:
+        logger.warning(f"Model auto-detect skipped: {e}")
 
     # Initialize RAG pipeline
     try:
@@ -94,6 +112,7 @@ app.include_router(graph.router, tags=["Knowledge Graph"])
 app.include_router(agent.router, tags=["Agent"])
 app.include_router(openai_compat.router, tags=["OpenAI-Compatible"])
 app.include_router(export_import.router, tags=["Export/Import"])
+app.include_router(threads.router, tags=["Threads"])
 
 
 # Dashboard metrics middleware

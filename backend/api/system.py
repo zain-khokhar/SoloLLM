@@ -164,9 +164,30 @@ async def update_settings(request: SettingsUpdate):
     """Update application settings."""
     updates = request.model_dump(exclude_none=True)
 
+    # Validate default_model is actually installed before saving
+    if "default_model" in updates:
+        from core.inference import ollama_client
+        try:
+            installed = await ollama_client.list_models()
+            installed_names = [m["name"] for m in installed]
+            requested = updates["default_model"]
+            if requested not in installed_names:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model '{requested}' is not installed. Available models: {', '.join(installed_names) or 'none'}",
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Could not verify model availability: {e}")
+
     for key, value in updates.items():
         await set_setting(key, str(value))
         logger.info(f"Setting updated: {key}")
+
+    # Sync default_model to runtime settings
+    if "default_model" in updates:
+        settings.default_model = updates["default_model"]
 
     # Return updated settings
     return await get_settings()

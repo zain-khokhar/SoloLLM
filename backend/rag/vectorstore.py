@@ -226,6 +226,7 @@ class VectorStore:
         workspace_id: str = "default",
         top_k: int = 10,
         document_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> list[SearchResult]:
         """
         Search for similar chunks using cosine similarity.
@@ -233,10 +234,24 @@ class VectorStore:
         Loads all embeddings from the workspace into memory
         and performs brute-force cosine similarity search.
         For datasets under ~100K chunks, this is fast enough.
+
+        Args:
+            document_id: Filter to a single document (legacy)
+            document_ids: Filter to multiple documents (thread-scoped)
         """
         db = await self._get_db()
         try:
-            if document_id:
+            if document_ids:
+                # Thread-scoped: only search within these specific documents
+                placeholders = ",".join("?" for _ in document_ids)
+                cursor = await db.execute(
+                    f"""SELECT id, document_id, content, document_title, section_title,
+                              chunk_index, page_number, embedding, metadata
+                       FROM document_chunks
+                       WHERE workspace_id = ? AND document_id IN ({placeholders}) AND embedding IS NOT NULL""",
+                    (workspace_id, *document_ids),
+                )
+            elif document_id:
                 cursor = await db.execute(
                     """SELECT id, document_id, content, document_title, section_title,
                               chunk_index, page_number, embedding, metadata

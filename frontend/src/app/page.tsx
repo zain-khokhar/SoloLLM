@@ -5,14 +5,16 @@ import Sidebar from "@/components/sidebar/Sidebar";
 import ChatArea from "@/components/chat/ChatArea";
 import ChatInput from "@/components/chat/ChatInput";
 import ModelSelector from "@/components/chat/ModelSelector";
+import ThreadPanel from "@/components/chat/ThreadPanel";
+import ThreadSettingsPanel from "@/components/chat/ThreadSettingsPanel";
 import KnowledgeGraphView from "@/components/graph/KnowledgeGraphView";
 import AgentView from "@/components/agents/AgentView";
 import DashboardView from "@/components/dashboard/DashboardView";
 import ExportImportView from "@/components/export/ExportImportView";
 import SetupWizard from "@/components/setup/SetupWizard";
 import ModelPicker from "@/components/setup/ModelPicker";
-import { streamChat, streamContinuation, getConversation, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels } from "@/lib/api";
-import { DistillationMeta } from "@/types";
+import { streamChat, streamContinuation, getConversation, getThread, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels, uploadDocument, attachDocumentToThread, getThreadDocuments, listDocuments, detachDocumentFromThread } from "@/lib/api";
+import { DistillationMeta, Thread, DocumentInfo } from "@/types";
 import {
   ArrowLeft,
   RefreshCw,
@@ -24,6 +26,9 @@ import {
   Settings,
   CheckCircle2,
   AlertCircle,
+  Sliders,
+  FileText,
+  X,
 } from "lucide-react";
 
 interface ChatMessage {
@@ -43,6 +48,9 @@ export default function Home() {
   const [showSetup, setShowSetup] = useState<boolean | null>(null); // null = checking
   const [currentView, setCurrentView] = useState<"chat" | "settings" | "graph" | "agent" | "dashboard" | "export" | "models">("chat");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [showThreadSettings, setShowThreadSettings] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
@@ -52,6 +60,8 @@ export default function Home() {
   const [refreshSidebar, setRefreshSidebar] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [distillationMeta, setDistillationMeta] = useState<DistillationMeta | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [threadDocuments, setThreadDocuments] = useState<{ document_id: string; title?: string }[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   // Check if we need to show the setup wizard
@@ -78,24 +88,69 @@ export default function Home() {
   const handleNewChat = useCallback(() => {
     if (abortRef.current) abortRef.current.abort();
     setConversationId(null);
+    setActiveThreadId(null);
+    setThreads([]);
+    setShowThreadSettings(false);
     setMessages([]);
     setStreamingContent("");
     setIsStreaming(false);
     setTruncation(null);
     setError(null);
     setDistillationMeta(null);
+    setThreadDocuments([]);
     setCurrentView("chat");
   }, []);
 
   const handleSelectConversation = useCallback(async (id: string) => {
     try {
       setCurrentView("chat");
+      setShowThreadSettings(false);
       const data = await getConversation(id);
       setConversationId(id);
+      setThreads(data.threads || []);
+      // Set active thread to default thread
+      const defaultThreadId = data.default_thread_id || (data.threads?.[0]?.id ?? null);
+      setActiveThreadId(defaultThreadId);
+      setSelectedModel(data.conversation.model);
+      setTruncation(null);
+      setError(null);
+      setDistillationMeta(null);
+
+      // Load ONLY this thread's messages (context isolation!)
+      if (defaultThreadId) {
+        try {
+          const threadData = await getThread(defaultThreadId);
+          setMessages(
+            threadData.messages
+              .filter((m: { role: string }) => m.role !== "system")
+              .map((m: { id: string; role: string; content: string }) => ({
+                id: m.id,
+                role: m.role as "user" | "assistant",
+                content: m.content,
+              }))
+          );
+        } catch {
+          // Fallback: show no messages for fresh start
+          setMessages([]);
+        }
+      } else {
+        setMessages([]);
+      }
+    } catch {
+      setError("Failed to load conversation");
+    }
+  }, []);
+
+  const handleSelectThread = useCallback(async (threadId: string) => {
+    if (!conversationId) return;
+    setActiveThreadId(threadId);
+    setShowThreadSettings(false);
+    try {
+      const data = await getThread(threadId);
       setMessages(
         data.messages
-          .filter((m) => m.role !== "system")
-          .map((m) => ({
+          .filter((m: { role: string }) => m.role !== "system")
+          .map((m: { id: string; role: string; content: string }) => ({
             id: m.id,
             role: m.role as "user" | "assistant",
             content: m.content,
@@ -103,11 +158,11 @@ export default function Home() {
       );
       setTruncation(null);
       setError(null);
-      setSelectedModel(data.conversation.model);
+      setDistillationMeta(null);
     } catch {
-      setError("Failed to load conversation");
+      setError("Failed to load thread");
     }
-  }, []);
+  }, [conversationId]);
 
   const handleSend = useCallback(
     (message: string) => {
@@ -130,6 +185,7 @@ export default function Home() {
         {
           message,
           conversation_id: conversationId || undefined,
+          thread_id: activeThreadId || undefined,
           model: selectedModel,
         },
         {
@@ -140,6 +196,7 @@ export default function Home() {
           onDone: (data) => {
             setIsStreaming(false);
             setConversationId(data.conversation_id);
+            if (data.thread_id) setActiveThreadId(data.thread_id);
             setMessages((prev) => [
               ...prev,
               {
@@ -154,6 +211,7 @@ export default function Home() {
           onTruncated: (data) => {
             setIsStreaming(false);
             setConversationId(data.conversation_id);
+            if (data.thread_id) setActiveThreadId(data.thread_id);
             setMessages((prev) => [
               ...prev,
               {
@@ -184,7 +242,7 @@ export default function Home() {
 
       abortRef.current = controller;
     },
-    [conversationId, selectedModel]
+    [conversationId, activeThreadId, selectedModel]
   );
 
   const handleStop = useCallback(() => {
@@ -265,6 +323,50 @@ export default function Home() {
     abortRef.current = controller;
   }, [truncation]);
 
+  // Load thread documents when active thread changes
+  useEffect(() => {
+    if (!activeThreadId) {
+      setThreadDocuments([]);
+      return;
+    }
+    getThreadDocuments(activeThreadId)
+      .then((data) => setThreadDocuments(data.documents || []))
+      .catch(() => setThreadDocuments([]));
+  }, [activeThreadId]);
+
+  const handleUploadDocument = useCallback(async (file: File) => {
+    if (!activeThreadId) {
+      setError("Please start a conversation first, then upload documents to a thread.");
+      return;
+    }
+    setIsUploading(true);
+    setError(null);
+    try {
+      // Upload & embed (RAG pipeline: parse → chunk → embed → vector DB)
+      const result = await uploadDocument(file);
+      if (result.success && result.document_id) {
+        // Attach to current thread for scoped RAG retrieval
+        await attachDocumentToThread(activeThreadId, result.document_id);
+        // Refresh thread documents
+        const docs = await getThreadDocuments(activeThreadId);
+        setThreadDocuments(docs.documents || []);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Document upload failed");
+    }
+    setIsUploading(false);
+  }, [activeThreadId]);
+
+  const handleDetachDocument = useCallback(async (documentId: string) => {
+    if (!activeThreadId) return;
+    try {
+      await detachDocumentFromThread(activeThreadId, documentId);
+      setThreadDocuments((prev) => prev.filter((d) => d.document_id !== documentId));
+    } catch {
+      // ignore
+    }
+  }, [activeThreadId]);
+
   return (
     <div className="flex h-screen">
       {/* Setup wizard shown on first launch or when Ollama not available */}
@@ -332,7 +434,7 @@ export default function Home() {
           <ModelPicker onModelInstalled={() => {}} onSkip={() => setCurrentView("chat")} />
         </div>
       ) : (
-        <div className="flex-1 flex flex-col h-screen">
+        <div className="flex-1 flex flex-col h-screen relative">
           {/* Top bar */}
           <div
             className="flex items-center justify-between px-4 py-2.5"
@@ -346,20 +448,52 @@ export default function Home() {
               selectedModel={selectedModel}
               onSelectModel={setSelectedModel}
             />
-            {error && (
-              <div
-                className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg animate-slideDown"
-                style={{
-                  color: "var(--error)",
-                  background: "rgba(248, 113, 113, 0.08)",
-                  border: "1px solid rgba(248, 113, 113, 0.15)",
-                }}
-              >
-                <AlertCircle size={13} />
-                {error}
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {error && (
+                <div
+                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg animate-slideDown"
+                  style={{
+                    color: "var(--error)",
+                    background: "rgba(248, 113, 113, 0.08)",
+                    border: "1px solid rgba(248, 113, 113, 0.15)",
+                  }}
+                >
+                  <AlertCircle size={13} />
+                  {error}
+                </div>
+              )}
+              {conversationId && activeThreadId && (
+                <button
+                  onClick={() => setShowThreadSettings(!showThreadSettings)}
+                  className="p-2 rounded-lg transition-smooth"
+                  style={{
+                    color: showThreadSettings ? "var(--accent)" : "var(--text-muted)",
+                    background: showThreadSettings ? "var(--accent-muted)" : "transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--bg-hover)";
+                    e.currentTarget.style.color = "var(--accent)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = showThreadSettings ? "var(--accent-muted)" : "transparent";
+                    e.currentTarget.style.color = showThreadSettings ? "var(--accent)" : "var(--text-muted)";
+                  }}
+                  title="Thread Settings"
+                >
+                  <Sliders size={16} />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Thread Panel — shows threads under the top bar */}
+          <ThreadPanel
+            conversationId={conversationId}
+            activeThreadId={activeThreadId}
+            onSelectThread={handleSelectThread}
+            onThreadCreated={(thread) => setThreads((prev) => [...prev, thread])}
+            refreshTrigger={refreshSidebar}
+          />
 
           <ChatArea
             messages={messages}
@@ -371,11 +505,58 @@ export default function Home() {
             distillationMeta={distillationMeta}
           />
 
+          {/* Document attachments bar */}
+          {threadDocuments.length > 0 && (
+            <div
+              className="px-4 py-2 flex items-center gap-2 flex-wrap"
+              style={{
+                borderTop: "1px solid var(--border-color)",
+                background: "rgba(18, 18, 26, 0.5)",
+              }}
+            >
+              <span className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+                Documents:
+              </span>
+              {threadDocuments.map((doc) => (
+                <span
+                  key={doc.document_id}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px]"
+                  style={{
+                    background: "var(--accent-muted)",
+                    color: "var(--accent)",
+                    border: "1px solid rgba(99, 102, 241, 0.15)",
+                  }}
+                >
+                  <FileText size={10} />
+                  {doc.document_id.slice(0, 8)}...
+                  <button
+                    onClick={() => handleDetachDocument(doc.document_id)}
+                    className="ml-0.5 p-0.5 rounded hover:bg-red-500/20 transition-colors"
+                    style={{ color: "var(--text-muted)" }}
+                    title="Remove from thread"
+                  >
+                    <X size={8} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           <ChatInput
             onSend={handleSend}
             onStop={handleStop}
             isGenerating={isStreaming}
+            onUploadDocument={handleUploadDocument}
+            isUploading={isUploading}
           />
+
+          {/* Thread Settings Slide-over Panel */}
+          {showThreadSettings && (
+            <ThreadSettingsPanel
+              threadId={activeThreadId}
+              onClose={() => setShowThreadSettings(false)}
+            />
+          )}
         </div>
       )}
         </>

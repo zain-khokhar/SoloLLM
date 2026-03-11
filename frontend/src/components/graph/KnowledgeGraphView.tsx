@@ -1157,7 +1157,7 @@ function ScrapeTab({
       </div>
 
       {/* Error */}
-      {scrapeError && (
+      {scrapeError ? (
         <div
           className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs animate-fadeIn"
           style={{
@@ -1169,10 +1169,10 @@ function ScrapeTab({
           <AlertCircle size={14} />
           {scrapeError}
         </div>
-      )}
+      ) : null}
 
       {/* Preview */}
-      {preview && (
+      {preview ? (
         <div
           className="rounded-xl p-4 space-y-3 animate-fadeIn"
           style={{
@@ -1213,10 +1213,10 @@ function ScrapeTab({
             {preview.content_preview}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Success Result */}
-      {scrapeResult && (scrapeResult as Record<string, unknown>).success && (
+      {scrapeResult && Boolean((scrapeResult as Record<string, unknown>).success) ? (
         <div
           className="rounded-xl p-4 animate-fadeIn"
           style={{
@@ -1234,7 +1234,7 @@ function ScrapeTab({
             <div>Relationships: <span className="font-medium">{String(scrapeResult.relationships_extracted || 0)}</span></div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

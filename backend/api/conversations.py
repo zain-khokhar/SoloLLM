@@ -21,15 +21,27 @@ async def get_conversations(limit: int = Query(50, ge=1, le=200), offset: int = 
 
 @router.get("/conversations/{conversation_id}")
 async def get_conversation_detail(conversation_id: str):
-    """Get a conversation with all its messages."""
+    """Get a conversation with its threads and default thread info."""
     conversation = await get_conversation(conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    messages = await get_messages(conversation_id)
+    from storage.database import list_threads, get_default_thread
+
+    threads = await list_threads(conversation_id)
+    default_thread = await get_default_thread(conversation_id)
+
+    # Get messages for the default thread (or all if no thread)
+    if default_thread:
+        messages = await get_messages(conversation_id, thread_id=default_thread["id"])
+    else:
+        messages = await get_messages(conversation_id)
+
     return {
         "conversation": conversation,
         "messages": messages,
+        "threads": threads,
+        "default_thread_id": default_thread["id"] if default_thread else None,
     }
 
 

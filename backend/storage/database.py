@@ -27,8 +27,10 @@ CREATE TABLE IF NOT EXISTS messages (
     token_count INTEGER DEFAULT 0,
     is_continuation INTEGER DEFAULT 0,
     continuation_of TEXT,
+    thread_id TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -97,6 +99,49 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS threads (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT 'Main',
+    system_prompt TEXT DEFAULT '',
+    context_mode TEXT DEFAULT 'isolated',
+    is_default INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS thread_settings (
+    thread_id TEXT PRIMARY KEY,
+    max_tokens INTEGER,
+    temperature REAL,
+    rag_enabled INTEGER DEFAULT 1,
+    rag_top_k INTEGER DEFAULT 5,
+    compression_enabled INTEGER DEFAULT 0,
+    memory_layers INTEGER DEFAULT 1,
+    FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS thread_documents (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    attached_at TEXT NOT NULL,
+    FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE,
+    UNIQUE(thread_id, document_id)
+);
+
+CREATE TABLE IF NOT EXISTS context_pages (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    page_number INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    token_count INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at);
@@ -104,6 +149,9 @@ CREATE INDEX IF NOT EXISTS idx_conversation_summaries ON conversation_summaries(
 CREATE INDEX IF NOT EXISTS idx_distillation_metrics ON distillation_metrics(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_agent_memories_category ON agent_memories(category);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at);
+CREATE INDEX IF NOT EXISTS idx_threads_conversation ON threads(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_thread_documents_thread ON thread_documents(thread_id);
+CREATE INDEX IF NOT EXISTS idx_context_pages_thread ON context_pages(thread_id);
 """
 
 
@@ -129,6 +177,12 @@ async def init_db():
     try:
         await db.executescript(SCHEMA_SQL)
         await db.commit()
+        # Migration: add thread_id column to messages if missing
+        cursor = await db.execute("PRAGMA table_info(messages)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        if "thread_id" not in columns:
+            await db.execute("ALTER TABLE messages ADD COLUMN thread_id TEXT")
+            await db.commit()
     finally:
         await db.close()
 
@@ -144,8 +198,22 @@ async def create_conversation(title: str, model: str, system_prompt: str = "") -
             "INSERT INTO conversations (id, title, model, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
             (cid, title, model, system_prompt, now, now),
         )
+        # Auto-create first thread — no "Main" thread concept, all threads are equal
+        tid = new_id()
+        await db.execute(
+            """INSERT INTO threads (id, conversation_id, title, system_prompt, context_mode, is_default, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tid, cid, "Thread 1", "", "isolated", 0, now, now),
+        )
+        await db.execute(
+            "INSERT INTO thread_settings (thread_id) VALUES (?)",
+            (tid,),
+        )
         await db.commit()
-        return {"id": cid, "title": title, "model": model, "system_prompt": system_prompt, "created_at": now, "updated_at": now}
+        return {
+            "id": cid, "title": title, "model": model, "system_prompt": system_prompt,
+            "created_at": now, "updated_at": now, "default_thread_id": tid,
+        }
     finally:
         await db.close()
 
@@ -209,14 +277,17 @@ async def add_message(
     token_count: int = 0,
     is_continuation: bool = False,
     continuation_of: str | None = None,
+    thread_id: str | None = None,
 ) -> dict:
     db = await get_db()
     try:
         mid = new_id()
         now = _now()
+        # Ensure thread_id column exists (added for thread support)
         await db.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, token_count, is_continuation, continuation_of, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (mid, conversation_id, role, content, token_count, int(is_continuation), continuation_of, now),
+            """INSERT INTO messages (id, conversation_id, role, content, token_count, is_continuation, continuation_of, thread_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (mid, conversation_id, role, content, token_count, int(is_continuation), continuation_of, thread_id, now),
         )
         # Update conversation timestamp
         await db.execute(
@@ -228,19 +299,25 @@ async def add_message(
             "id": mid, "conversation_id": conversation_id, "role": role,
             "content": content, "token_count": token_count,
             "is_continuation": is_continuation, "continuation_of": continuation_of,
-            "created_at": now,
+            "thread_id": thread_id, "created_at": now,
         }
     finally:
         await db.close()
 
 
-async def get_messages(conversation_id: str) -> list[dict]:
+async def get_messages(conversation_id: str, thread_id: str | None = None) -> list[dict]:
     db = await get_db()
     try:
-        cursor = await db.execute(
-            "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
-            (conversation_id,),
-        )
+        if thread_id:
+            cursor = await db.execute(
+                "SELECT * FROM messages WHERE conversation_id = ? AND thread_id = ? ORDER BY created_at ASC",
+                (conversation_id, thread_id),
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
+                (conversation_id,),
+            )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -535,6 +612,218 @@ async def list_agent_runs(limit: int = 20) -> list[dict]:
         cursor = await db.execute(
             "SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT ?",
             (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+# ── Threads ─────────────────────────────────────────────────
+
+async def create_thread(
+    conversation_id: str,
+    title: str = "Main",
+    system_prompt: str = "",
+    context_mode: str = "isolated",
+    is_default: bool = False,
+) -> dict:
+    db = await get_db()
+    try:
+        tid = new_id()
+        now = _now()
+        await db.execute(
+            """INSERT INTO threads (id, conversation_id, title, system_prompt, context_mode, is_default, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tid, conversation_id, title, system_prompt, context_mode, int(is_default), now, now),
+        )
+        # Create default thread_settings row
+        await db.execute(
+            "INSERT INTO thread_settings (thread_id) VALUES (?)",
+            (tid,),
+        )
+        await db.commit()
+        return {
+            "id": tid, "conversation_id": conversation_id, "title": title,
+            "system_prompt": system_prompt, "context_mode": context_mode,
+            "is_default": is_default, "created_at": now, "updated_at": now,
+        }
+    finally:
+        await db.close()
+
+
+async def list_threads(conversation_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM threads WHERE conversation_id = ? ORDER BY created_at ASC",
+            (conversation_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_thread(thread_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM threads WHERE id = ?", (thread_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def update_thread(thread_id: str, **kwargs) -> bool:
+    db = await get_db()
+    try:
+        allowed = {"title", "system_prompt", "context_mode"}
+        fields = {k: v for k, v in kwargs.items() if k in allowed}
+        if not fields:
+            return False
+        fields["updated_at"] = _now()
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        await db.execute(
+            f"UPDATE threads SET {set_clause} WHERE id = ?",
+            (*fields.values(), thread_id),
+        )
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def delete_thread(thread_id: str) -> bool:
+    """Delete a thread. Any thread can be deleted."""
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT id FROM threads WHERE id = ?", (thread_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        await db.execute("DELETE FROM threads WHERE id = ?", (thread_id,))
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def get_default_thread(conversation_id: str) -> dict | None:
+    """Get the first thread for a conversation (no 'Main' thread concept)."""
+    db = await get_db()
+    try:
+        # First try is_default=1 for backward compatibility, then fall back to first thread
+        cursor = await db.execute(
+            "SELECT * FROM threads WHERE conversation_id = ? AND is_default = 1 LIMIT 1",
+            (conversation_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            cursor = await db.execute(
+                "SELECT * FROM threads WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 1",
+                (conversation_id,),
+            )
+            row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+# ── Thread Settings ─────────────────────────────────────────
+
+async def get_thread_settings(thread_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM thread_settings WHERE thread_id = ?", (thread_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def update_thread_settings(thread_id: str, **kwargs) -> bool:
+    db = await get_db()
+    try:
+        allowed = {"max_tokens", "temperature", "rag_enabled", "rag_top_k", "compression_enabled", "memory_layers"}
+        fields = {k: v for k, v in kwargs.items() if k in allowed}
+        if not fields:
+            return False
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        await db.execute(
+            f"UPDATE thread_settings SET {set_clause} WHERE thread_id = ?",
+            (*fields.values(), thread_id),
+        )
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+# ── Thread Documents ────────────────────────────────────────
+
+async def attach_document_to_thread(thread_id: str, document_id: str) -> bool:
+    db = await get_db()
+    try:
+        did = new_id()
+        now = _now()
+        await db.execute(
+            "INSERT OR IGNORE INTO thread_documents (id, thread_id, document_id, attached_at) VALUES (?, ?, ?, ?)",
+            (did, thread_id, document_id, now),
+        )
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def get_thread_documents(thread_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM thread_documents WHERE thread_id = ? ORDER BY attached_at ASC",
+            (thread_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def detach_document_from_thread(thread_id: str, document_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "DELETE FROM thread_documents WHERE thread_id = ? AND document_id = ?",
+            (thread_id, document_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+# ── Context Pages ───────────────────────────────────────────
+
+async def get_active_context_pages(thread_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM context_pages WHERE thread_id = ? AND is_active = 1 ORDER BY page_number ASC",
+            (thread_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_all_context_pages(thread_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM context_pages WHERE thread_id = ? ORDER BY page_number ASC",
+            (thread_id,),
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
