@@ -1,0 +1,172 @@
+import asyncio
+import json
+import logging
+
+from fastapi import APIRouter, HTTPException
+from sse_starlette.sse import EventSourceResponse
+
+from core.profiler import profile_system
+from core.config import settings
+from storage.database import (
+    save_system_profile, get_system_profile,
+    get_all_settings, set_setting, get_setting,
+)
+from storage.schemas import SettingsUpdate
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+# ── Runtime / Ollama Manager Endpoints ──────────────────────
+
+@router.get("/runtime/status")
+async def runtime_status():
+    """Get Ollama runtime status including health and manager state."""
+    from core.ollama_manager import ollama_manager
+    health = await ollama_manager.health_check()
+    return {
+        "ollama": health,
+        "auto_start_enabled": settings.ollama_auto_start,
+    }
+
+
+@router.post("/runtime/setup")
+async def runtime_setup():
+    """Trigger Ollama download + start (for first-time setup)."""
+    from core.ollama_manager import ollama_manager
+    try:
+        success = await ollama_manager.ensure_running()
+        health = await ollama_manager.health_check()
+        return {
+            "success": success,
+            "ollama": health,
+        }
+    except Exception as e:
+        logger.error(f"Runtime setup failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/runtime/setup/progress")
+async def runtime_setup_progress():
+    """Stream Ollama download / setup progress via SSE."""
+    from core.ollama_manager import ollama_manager
+
+    async def _stream():
+        prev = None
+        while True:
+            progress = ollama_manager.download_progress
+            if progress != prev:
+                yield {
+                    "event": "progress",
+                    "data": json.dumps(progress),
+                }
+                prev = {**progress}
+                if progress["stage"] in ("ready", "error", "idle"):
+                    break
+            await asyncio.sleep(0.5)
+
+    return EventSourceResponse(_stream(), media_type="text/event-stream")
+
+
+@router.post("/runtime/restart")
+async def runtime_restart():
+    """Restart the managed Ollama instance."""
+    from core.ollama_manager import ollama_manager
+    if not ollama_manager.is_managed:
+        raise HTTPException(status_code=400, detail="Ollama is not managed by SoloLLM (system-installed Ollama is running)")
+    try:
+        success = await ollama_manager.restart()
+        return {"success": success}
+    except Exception as e:
+        logger.error(f"Ollama restart failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/runtime/models/catalog")
+async def get_model_catalog():
+    """Get the full model catalog with hardware compatibility info."""
+    from core.ollama_manager import ollama_manager
+
+    # Get system profile for compatibility checking
+    profile = await get_system_profile()
+    vram_mb = None
+    ram_mb = None
+    if profile:
+        vram_mb = profile.get("vram_mb")
+        ram_mb = profile.get("ram_mb")
+
+    if not ram_mb:
+        # Quick profile if not done yet
+        from core.profiler import profile_system
+        hw = profile_system()
+        vram_mb = hw.get("vram_mb")
+        ram_mb = hw.get("ram_mb")
+        try:
+            await save_system_profile(hw)
+        except Exception:
+            pass
+
+    catalog = ollama_manager.get_model_catalog(vram_mb=vram_mb, ram_mb=ram_mb)
+    return {
+        "catalog": catalog,
+        "hardware": {
+            "vram_mb": vram_mb,
+            "ram_mb": ram_mb,
+        },
+    }
+
+
+@router.get("/system/profile")
+async def get_profile():
+    """Get cached system hardware profile."""
+    profile = await get_system_profile()
+    if not profile:
+        # Auto-profile on first request
+        profile = profile_system()
+        await save_system_profile(profile)
+        profile = await get_system_profile()
+    return {"profile": profile}
+
+
+@router.post("/system/profile")
+async def run_profiler():
+    """Re-run the hardware profiler and update the cached profile."""
+    profile = profile_system()
+    await save_system_profile(profile)
+    stored = await get_system_profile()
+
+    # Include model recommendations
+    result = dict(stored) if stored else profile
+    result["recommended_models"] = profile.get("recommended_models", [])
+    return {"profile": result}
+
+
+@router.get("/settings")
+async def get_settings():
+    """Get all application settings."""
+    db_settings = await get_all_settings()
+
+    # Merge with defaults
+    return {
+        "settings": {
+            "ollama_base_url": db_settings.get("ollama_base_url", settings.ollama_base_url),
+            "default_model": db_settings.get("default_model", settings.default_model),
+            "max_tokens": int(db_settings.get("max_tokens", settings.max_tokens)),
+            "temperature": float(db_settings.get("temperature", settings.temperature)),
+            "auto_continue": db_settings.get("auto_continue", str(settings.auto_continue)).lower() == "true",
+            "system_prompt": db_settings.get("system_prompt", ""),
+        }
+    }
+
+
+@router.put("/settings")
+async def update_settings(request: SettingsUpdate):
+    """Update application settings."""
+    updates = request.model_dump(exclude_none=True)
+
+    for key, value in updates.items():
+        await set_setting(key, str(value))
+        logger.info(f"Setting updated: {key}")
+
+    # Return updated settings
+    return await get_settings()

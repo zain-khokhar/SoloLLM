@@ -1,0 +1,827 @@
+import {
+  Conversation,
+  Message,
+  ModelInfo,
+  AppSettings,
+  SystemProfile,
+  DistillationMeta,
+  DistillationSettings,
+  GraphStats,
+  GraphVisualization,
+  GraphAnalysis,
+  EntityNeighbors,
+  TimelineEntity,
+  ScrapeResult,
+  ScrapePreview,
+  GraphNode,
+  AgentTool,
+  AgentMemory,
+  AgentRun,
+  DashboardSummary,
+  ImportResult,
+  RuntimeStatus,
+  ModelCatalogResponse,
+} from "@/types";
+
+const API_BASE = "/api";
+
+// ── REST helpers ───────────────────────────────────────────
+
+async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${url}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Health ─────────────────────────────────────────────────
+
+export async function checkHealth(): Promise<{
+  status: string;
+  ollama_connected: boolean;
+}> {
+  return fetchJSON("/health");
+}
+
+// ── Models ─────────────────────────────────────────────────
+
+export async function listModels(): Promise<ModelInfo[]> {
+  const data = await fetchJSON<{ models: ModelInfo[] }>("/models");
+  return data.models;
+}
+
+export async function deleteModel(name: string): Promise<void> {
+  await fetchJSON(`/models/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+// ── Conversations ──────────────────────────────────────────
+
+export async function listConversations(): Promise<Conversation[]> {
+  const data = await fetchJSON<{ conversations: Conversation[] }>(
+    "/conversations"
+  );
+  return data.conversations;
+}
+
+export async function getConversation(
+  id: string
+): Promise<{ conversation: Conversation; messages: Message[] }> {
+  return fetchJSON(`/conversations/${id}`);
+}
+
+export async function updateConversation(
+  id: string,
+  data: Partial<Pick<Conversation, "title" | "model" | "system_prompt">>
+): Promise<Conversation> {
+  const res = await fetchJSON<{ conversation: Conversation }>(
+    `/conversations/${id}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
+  );
+  return res.conversation;
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  await fetchJSON(`/conversations/${id}`, { method: "DELETE" });
+}
+
+// ── Settings ───────────────────────────────────────────────
+
+export async function getSettings(): Promise<AppSettings> {
+  const data = await fetchJSON<{ settings: AppSettings }>("/settings");
+  return data.settings;
+}
+
+export async function updateSettings(
+  settings: Partial<AppSettings>
+): Promise<AppSettings> {
+  const data = await fetchJSON<{ settings: AppSettings }>("/settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
+  return data.settings;
+}
+
+// ── System ─────────────────────────────────────────────────
+
+export async function getSystemProfile(): Promise<SystemProfile> {
+  const data = await fetchJSON<{ profile: SystemProfile }>("/system/profile");
+  return data.profile;
+}
+
+export async function runProfiler(): Promise<SystemProfile> {
+  const data = await fetchJSON<{ profile: SystemProfile }>("/system/profile", {
+    method: "POST",
+  });
+  return data.profile;
+}
+
+// ── Runtime / Ollama Manager ──────────────────────────────
+
+export async function getRuntimeStatus(): Promise<RuntimeStatus> {
+  return fetchJSON("/runtime/status");
+}
+
+export async function setupRuntime(): Promise<{ success: boolean; ollama: Record<string, unknown> }> {
+  return fetchJSON("/runtime/setup", { method: "POST" });
+}
+
+export interface SetupProgress {
+  stage: "idle" | "downloading" | "extracting" | "starting" | "ready" | "error";
+  downloaded_bytes: number;
+  total_bytes: number;
+  percent: number;
+  error: string | null;
+}
+
+export function streamSetupProgress(
+  callbacks: {
+    onProgress: (data: SetupProgress) => void;
+    onError: (error: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}/runtime/setup/progress`, {
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        callbacks.onError(`Request failed: ${res.status}`);
+        return;
+      }
+      const reader = res.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              callbacks.onProgress(JSON.parse(dataStr));
+            } catch {
+              // skip
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError(err.message);
+      }
+    });
+
+  return controller;
+}
+
+export async function restartRuntime(): Promise<{ success: boolean }> {
+  return fetchJSON("/runtime/restart", { method: "POST" });
+}
+
+export async function getModelCatalog(): Promise<ModelCatalogResponse> {
+  return fetchJSON("/runtime/models/catalog");
+}
+
+export function streamModelPull(
+  modelName: string,
+  callbacks: {
+    onProgress: (data: { status: string; progress: number; total: number; completed: number }) => void;
+    onDone: (model: string) => void;
+    onError: (error: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}/models/pull`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: modelName }),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        callbacks.onError(err.detail || `Request failed: ${res.status}`);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        callbacks.onError("No response body");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr);
+              if (eventType === "progress") {
+                callbacks.onProgress(data);
+              } else if (eventType === "done") {
+                callbacks.onDone(data.model);
+              } else if (eventType === "error") {
+                callbacks.onError(data.error);
+              }
+            } catch {
+              // skip
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError(err.message);
+      }
+    });
+
+  return controller;
+}
+
+// ── SSE Streaming Chat ─────────────────────────────────────
+
+export interface ChatStreamCallbacks {
+  onToken: (content: string) => void;
+  onDone: (data: {
+    message_id: string;
+    conversation_id: string;
+    tokens_used: number;
+  }) => void;
+  onTruncated: (data: {
+    message_id: string;
+    conversation_id: string;
+    tokens_used: number;
+    reason: string;
+    confidence: number;
+  }) => void;
+  onError: (error: string) => void;
+  onDistillation?: (data: DistillationMeta) => void;
+}
+
+export function streamChat(
+  params: {
+    message: string;
+    conversation_id?: string;
+    model?: string;
+    system_prompt?: string;
+    temperature?: number;
+    max_tokens?: number;
+  },
+  callbacks: ChatStreamCallbacks
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        callbacks.onError(err.detail || `Request failed: ${res.status}`);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        callbacks.onError("No response body");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr);
+              switch (eventType) {
+                case "token":
+                  callbacks.onToken(data.content);
+                  break;
+                case "done":
+                  callbacks.onDone(data);
+                  break;
+                case "truncated":
+                  callbacks.onTruncated(data);
+                  break;
+                case "distillation":
+                  callbacks.onDistillation?.(data);
+                  break;
+                case "error":
+                  callbacks.onError(data.error);
+                  break;
+              }
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError(err.message);
+      }
+    });
+
+  return controller;
+}
+
+export function streamContinuation(
+  params: { conversation_id: string; message_id: string },
+  callbacks: ChatStreamCallbacks
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}/chat/continue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        callbacks.onError(err.detail || `Request failed: ${res.status}`);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        callbacks.onError("No response body");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr);
+              switch (eventType) {
+                case "token":
+                  callbacks.onToken(data.content);
+                  break;
+                case "done":
+                  callbacks.onDone(data);
+                  break;
+                case "truncated":
+                  callbacks.onTruncated(data);
+                  break;
+                case "error":
+                  callbacks.onError(data.error);
+                  break;
+              }
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError(err.message);
+      }
+    });
+
+  return controller;
+}
+
+// ── Distillation API (Phase 3) ─────────────────────────────
+
+export async function getDistillationSettings(): Promise<DistillationSettings> {
+  const data = await fetchJSON<{ settings: DistillationSettings }>(
+    "/distillation/settings"
+  );
+  return data.settings;
+}
+
+export async function updateDistillationSettings(
+  update: Partial<DistillationSettings>
+): Promise<DistillationSettings> {
+  const data = await fetchJSON<{ settings: DistillationSettings }>(
+    "/distillation/settings",
+    {
+      method: "PUT",
+      body: JSON.stringify(update),
+    }
+  );
+  return data.settings;
+}
+
+export async function getDistillationMetrics(
+  conversationId?: string
+): Promise<{
+  metrics: Array<Record<string, unknown>>;
+  summary: {
+    total_queries: number;
+    avg_confidence: number;
+    avg_compression_ratio: number;
+    total_verified: number;
+    query_type_distribution: Record<string, number>;
+  };
+}> {
+  const url = conversationId
+    ? `/distillation/metrics?conversation_id=${conversationId}`
+    : "/distillation/metrics";
+  return fetchJSON(url);
+}
+
+export async function runChainOfDensity(
+  content: string,
+  iterations: number = 2,
+  model?: string
+): Promise<{ summary: string; iterations: number }> {
+  return fetchJSON("/distillation/chain-of-density", {
+    method: "POST",
+    body: JSON.stringify({ content, iterations, model }),
+  });
+}
+
+export async function verifyResponse(
+  response: string,
+  context: string,
+  query: string,
+  model?: string
+): Promise<{
+  verified: boolean;
+  corrected_response: string | null;
+  feedback: string;
+}> {
+  return fetchJSON("/distillation/verify", {
+    method: "POST",
+    body: JSON.stringify({ response, context, query, model }),
+  });
+}
+
+// ── Knowledge Graph API (Phase 4) ─────────────────────────
+
+export async function getGraphStats(): Promise<GraphStats> {
+  return fetchJSON("/graph/stats");
+}
+
+export async function searchGraphEntities(
+  query: string,
+  limit: number = 20
+): Promise<{ entities: GraphNode[]; count: number }> {
+  return fetchJSON("/graph/search", {
+    method: "POST",
+    body: JSON.stringify({ query, limit }),
+  });
+}
+
+export async function getEntityNeighbors(
+  entityId: string
+): Promise<EntityNeighbors> {
+  return fetchJSON(`/graph/entity/${encodeURIComponent(entityId)}`);
+}
+
+export async function deleteEntity(entityId: string): Promise<void> {
+  await fetchJSON(`/graph/entity/${encodeURIComponent(entityId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getGraphVisualization(
+  limit: number = 200
+): Promise<GraphVisualization> {
+  return fetchJSON(`/graph/visualization?limit=${limit}`);
+}
+
+export async function getGraphAnalysis(): Promise<GraphAnalysis> {
+  return fetchJSON("/graph/analysis");
+}
+
+export async function getEntityTimeline(
+  limit: number = 50
+): Promise<{ entities: TimelineEntity[]; count: number }> {
+  return fetchJSON(`/graph/timeline?limit=${limit}`);
+}
+
+export async function clearGraph(): Promise<void> {
+  await fetchJSON("/graph/clear", { method: "DELETE" });
+}
+
+// ── Web Scraping API (Phase 4) ─────────────────────────────
+
+export async function scrapeUrl(
+  url: string,
+  workspaceId: string = "default"
+): Promise<ScrapeResult> {
+  return fetchJSON("/graph/scrape", {
+    method: "POST",
+    body: JSON.stringify({ url, workspace_id: workspaceId }),
+  });
+}
+
+export async function scrapePreview(
+  url: string
+): Promise<ScrapePreview> {
+  return fetchJSON("/graph/scrape/preview", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+// ── Agent API (Phase 5) ───────────────────────────────────
+
+export async function listAgentTools(): Promise<AgentTool[]> {
+  const data = await fetchJSON<{ tools: AgentTool[] }>("/agent/tools");
+  return data.tools;
+}
+
+export async function executeAgentTool(
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<{
+  tool_name: string;
+  success: boolean;
+  output: string;
+  error: string | null;
+}> {
+  return fetchJSON("/agent/execute", {
+    method: "POST",
+    body: JSON.stringify({ tool_name: toolName, arguments: args }),
+  });
+}
+
+export interface AgentStreamCallbacks {
+  onThought: (step: number, content: string) => void;
+  onAction: (step: number, tool: string, input: Record<string, unknown>) => void;
+  onObservation: (step: number, content: string) => void;
+  onAnswer: (content: string, totalSteps: number, toolsUsed: string[]) => void;
+  onError: (error: string) => void;
+}
+
+export function streamAgentRun(
+  params: { query: string; model?: string; max_steps?: number },
+  callbacks: AgentStreamCallbacks
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}/agent/run/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        callbacks.onError(err.detail || `Request failed: ${res.status}`);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        callbacks.onError("No response body");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr);
+              switch (eventType) {
+                case "thought":
+                  callbacks.onThought(data.step, data.content);
+                  break;
+                case "action":
+                  callbacks.onAction(data.step, data.tool, data.input);
+                  break;
+                case "observation":
+                  callbacks.onObservation(data.step, data.content);
+                  break;
+                case "answer":
+                  callbacks.onAnswer(
+                    data.content,
+                    data.total_steps,
+                    data.tools_used
+                  );
+                  break;
+                case "error":
+                  callbacks.onError(data.content);
+                  break;
+              }
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError(err.message);
+      }
+    });
+
+  return controller;
+}
+
+export async function runAgent(
+  query: string,
+  model?: string,
+  maxSteps?: number
+): Promise<{
+  answer: string;
+  success: boolean;
+  error: string | null;
+  total_steps: number;
+  tools_used: string[];
+  steps: Array<Record<string, unknown>>;
+}> {
+  return fetchJSON("/agent/run", {
+    method: "POST",
+    body: JSON.stringify({ query, model, max_steps: maxSteps }),
+  });
+}
+
+export async function getAgentRuns(
+  limit: number = 20
+): Promise<{ runs: AgentRun[] }> {
+  return fetchJSON(`/agent/runs?limit=${limit}`);
+}
+
+export async function getAgentMemories(
+  category?: string
+): Promise<{ memories: AgentMemory[]; count: number }> {
+  const url = category
+    ? `/agent/memory?category=${encodeURIComponent(category)}`
+    : "/agent/memory";
+  return fetchJSON(url);
+}
+
+export async function addAgentMemory(
+  content: string,
+  category: string = "general"
+): Promise<{ memory: AgentMemory }> {
+  return fetchJSON("/agent/memory", {
+    method: "POST",
+    body: JSON.stringify({ content, category }),
+  });
+}
+
+export async function deleteAgentMemory(
+  memoryId: string
+): Promise<void> {
+  await fetchJSON(`/agent/memory/${encodeURIComponent(memoryId)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Dashboard API (Phase 6) ──────────────────────────────
+
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  return fetchJSON("/dashboard/summary");
+}
+
+export async function getDashboardRecent(
+  count: number = 20
+): Promise<{ metrics: Array<Record<string, unknown>> }> {
+  return fetchJSON(`/dashboard/recent?count=${count}`);
+}
+
+// ── Export / Import API (Phase 6) ─────────────────────────
+
+export async function exportConversations(): Promise<void> {
+  const res = await fetch(`${API_BASE}/export/conversations`);
+  if (!res.ok) throw new Error("Export failed");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `solollm_conversations_${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function importConversations(file: File): Promise<ImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/export/conversations/import`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Import failed");
+  }
+  return res.json();
+}
+
+export async function exportSettings(): Promise<void> {
+  const res = await fetch(`${API_BASE}/export/settings`);
+  if (!res.ok) throw new Error("Export failed");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "solollm_settings.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function importSettings(file: File): Promise<{ success: boolean; imported_keys: string[] }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/export/settings/import`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Import failed");
+  }
+  return res.json();
+}
+
+export async function clearAgentMemories(): Promise<{ cleared: number }> {
+  return fetchJSON("/agent/memory", { method: "DELETE" });
+}
