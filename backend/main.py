@@ -72,6 +72,17 @@ async def lifespan(app: FastAPI):
     logger.info(f"Phase 4 — Knowledge Graph: {'enabled' if settings.knowledge_graph_enabled else 'disabled'}")
     logger.info(f"Phase 5 — Agent Framework: {'enabled' if settings.agent_enabled else 'disabled'}")
     logger.info("Phase 6 — OpenAI-compat API, Export/Import, Dashboard: enabled")
+
+    # ── Max-Power Runner: force-load the default model onto GPU ──
+    if settings.max_power_mode:
+        try:
+            from core.max_power_runner import max_power_runner
+            logger.info("[MaxPower] Force GPU reload — unloading CPU-cached model and reloading with num_gpu=999")
+            await max_power_runner.force_gpu_reload(settings.default_model)
+            logger.info(f"[MaxPower] ✓ Model '{settings.default_model}' is on GPU — max power active")
+        except Exception as e:
+            logger.warning(f"[MaxPower] Warm failed (non-fatal): {e}")
+
     yield
 
     # Shutdown: stop managed Ollama
@@ -81,6 +92,14 @@ async def lifespan(app: FastAPI):
             await ollama_manager.stop()
         except Exception as e:
             logger.warning(f"Error stopping Ollama: {e}")
+
+    # Shutdown: release warmed models
+    if settings.max_power_mode:
+        try:
+            from core.max_power_runner import max_power_runner
+            await max_power_runner.shutdown()
+        except Exception as e:
+            logger.warning(f"[MaxPower] Shutdown error: {e}")
 
     logger.info("Shutting down")
 

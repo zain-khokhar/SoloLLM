@@ -191,3 +191,43 @@ async def update_settings(request: SettingsUpdate):
 
     # Return updated settings
     return await get_settings()
+
+
+# ── Max-Power Runner Endpoints ──────────────────────────────
+
+@router.get("/runtime/maxpower/status")
+async def maxpower_status():
+    """Get the current max-power runner status."""
+    from core.max_power_runner import max_power_runner
+    return {
+        "enabled": settings.max_power_mode,
+        **max_power_runner.status(),
+    }
+
+
+@router.post("/runtime/maxpower/warm")
+async def maxpower_warm_model(model: str | None = None):
+    """
+    Force-load a model onto GPU at full power.
+    Unloads any CPU-cached version first, then reloads with num_gpu=999.
+    If model is omitted, warms the default model.
+    """
+    from core.max_power_runner import max_power_runner
+    target = model or settings.default_model
+    ok = await max_power_runner.force_gpu_reload(target)
+    if not ok:
+        raise HTTPException(status_code=500, detail=f"Failed to warm model '{target}' on GPU")
+    return {
+        "success": True,
+        "model": target,
+        **max_power_runner.status(),
+    }
+
+
+@router.post("/runtime/maxpower/unload")
+async def maxpower_unload_model(model: str | None = None):
+    """Unload a model from GPU VRAM."""
+    from core.max_power_runner import max_power_runner
+    target = model or settings.default_model
+    await max_power_runner.unload_model(target)
+    return {"success": True, "model": target}

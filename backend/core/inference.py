@@ -60,7 +60,8 @@ class OllamaClient:
     async def delete_model(self, name: str) -> bool:
         """Delete a local model."""
         async with httpx.AsyncClient() as client:
-            resp = await client.delete(
+            resp = await client.request(
+                "DELETE",
                 f"{self.base_url}/api/delete",
                 json={"name": name},
                 timeout=30,
@@ -96,8 +97,15 @@ class OllamaClient:
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
-        # GPU/CPU hybrid: -1 lets Ollama auto-decide, 0 = CPU only, N = N layers on GPU
-        if settings.gpu_layers >= 0:
+        # ── Max-Power mode: force all layers to GPU, max CPU threads ──
+        if settings.max_power_mode:
+            from core.max_power_runner import max_power_runner
+            gpu_opts = max_power_runner.get_max_power_options()
+            payload["options"].update(gpu_opts)
+            payload["keep_alive"] = -1
+            logger.info(f"[MaxPower] STREAM request → model={model}, num_gpu={gpu_opts['num_gpu']}, "
+                        f"num_thread={gpu_opts['num_thread']}, num_batch={gpu_opts['num_batch']}")
+        elif settings.gpu_layers >= 0:
             payload["options"]["num_gpu"] = settings.gpu_layers
 
         full_content = ""
@@ -155,8 +163,15 @@ class OllamaClient:
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
-        # GPU/CPU hybrid
-        if settings.gpu_layers >= 0:
+        # ── Max-Power mode: force all layers to GPU, max CPU threads ──
+        if settings.max_power_mode:
+            from core.max_power_runner import max_power_runner
+            gpu_opts = max_power_runner.get_max_power_options()
+            payload["options"].update(gpu_opts)
+            payload["keep_alive"] = -1
+            logger.info(f"[MaxPower] NON-STREAM request → model={model}, num_gpu={gpu_opts['num_gpu']}, "
+                        f"num_thread={gpu_opts['num_thread']}, num_batch={gpu_opts['num_batch']}")
+        elif settings.gpu_layers >= 0:
             payload["options"]["num_gpu"] = settings.gpu_layers
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:

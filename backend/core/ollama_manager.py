@@ -212,16 +212,17 @@ class OllamaManager:
         return self.binary_path
 
     def _extract_zip(self, data: bytes) -> None:
-        """Extract Ollama from a zip archive (Windows)."""
+        """Extract ALL files from zip archive (Windows).
+        
+        IMPORTANT: Must extract everything, not just ollama.exe.
+        CUDA runner DLLs and other GPU libraries are bundled in the zip.
+        """
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            for member in zf.namelist():
-                basename = Path(member).name.lower()
-                if basename == "ollama.exe":
-                    with zf.open(member) as src:
-                        self.binary_path.write_bytes(src.read())
-                    return
-            # If exact name not found, extract all to binary dir
             zf.extractall(self._binary_dir)
+            logger.info(f"Extracted {len(zf.namelist())} files to {self._binary_dir}")
+            for name in zf.namelist():
+                if 'cuda' in name.lower() or 'runner' in name.lower() or name.endswith('.dll'):
+                    logger.info(f"  GPU file: {name}")
 
     def _extract_tgz(self, data: bytes) -> None:
         """Extract Ollama from a tar.gz archive (Linux)."""
@@ -250,10 +251,19 @@ class OllamaManager:
             "OLLAMA_MODELS": str(self._models_dir),
         }
 
-        # GPU layer split — let Ollama use both CPU and GPU automatically
-        # Ollama handles this natively via num_gpu, but we can hint
-        # OLLAMA_NUM_PARALLEL controls concurrent requests
-        env["OLLAMA_NUM_PARALLEL"] = "1"
+        # ── Max-Power: inject server-level env vars for full GPU+CPU ──
+        if settings.max_power_mode:
+            from core.max_power_runner import MaxPowerRunner
+            mp_env = MaxPowerRunner.get_server_env()
+            env.update(mp_env)
+            # Tell Ollama where to find CUDA and CPU backend DLLs
+            # In v0.6+, libraries are at lib/ollama/ relative to binary
+            lib_dir = str(self._binary_dir / "lib" / "ollama")
+            env["OLLAMA_LLM_LIBRARY"] = "cuda_v12"  # Force CUDA 12.x (matches driver 573.71)
+            logger.info(f"[MaxPower] Server env applied: {mp_env}")
+            logger.info(f"[MaxPower] Lib dir: {lib_dir}, forcing cuda_v12")
+        else:
+            env["OLLAMA_NUM_PARALLEL"] = "1"
 
         logger.info(f"Starting Ollama on port {self._port} (models: {self._models_dir})")
 

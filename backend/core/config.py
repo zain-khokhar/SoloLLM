@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     context_window: int = 4096
     auto_continue: bool = True
     gpu_layers: int = -1  # -1 = auto (Ollama decides), 0 = CPU only, N = N layers on GPU
+    max_power_mode: bool = True  # Force max GPU+CPU on every prompt (--gpu --no-cpu-offload)
 
     # Continuation
     continuation_overlap_chars: int = 200
