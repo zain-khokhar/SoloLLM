@@ -275,19 +275,33 @@ class RAGSearchTool:
         t0 = time.time()
         try:
             from rag.pipeline import rag_pipeline
-            results = await rag_pipeline.query(query=query, workspace_id="default", top_k=top_k)
-            chunks = results.get("chunks", [])
-            if not chunks:
-                return ToolResult(tool_name="rag_search", success=True, output="No relevant documents found.", execution_time_ms=(time.time() - t0) * 1000)
+            cited_context = await rag_pipeline.query(query=query, workspace_id="default", top_k=top_k)
+
+            if not cited_context.citations:
+                return ToolResult(
+                    tool_name="rag_search", success=True,
+                    output="No relevant documents found.",
+                    execution_time_ms=(time.time() - t0) * 1000,
+                )
+
             formatted = []
-            for i, chunk in enumerate(chunks, 1):
-                title = chunk.get("document_title", "Unknown")
-                text = chunk.get("content", "")[:500]
-                score = chunk.get("score", 0)
-                formatted.append(f"[{i}] {title} (relevance: {score:.2f})\n{text}")
-            return ToolResult(tool_name="rag_search", success=True, output="\n\n".join(formatted), execution_time_ms=(time.time() - t0) * 1000)
+            for cite in cited_context.citations:
+                formatted.append(
+                    f"[{cite.index}] {cite.document_title} "
+                    f"(relevance: {cite.relevance_score:.2f})\n{cite.excerpt[:500]}"
+                )
+
+            return ToolResult(
+                tool_name="rag_search", success=True,
+                output="\n\n".join(formatted),
+                execution_time_ms=(time.time() - t0) * 1000,
+            )
         except Exception as e:
-            return ToolResult(tool_name="rag_search", success=False, output="", error=f"RAG search error: {e}", execution_time_ms=(time.time() - t0) * 1000)
+            return ToolResult(
+                tool_name="rag_search", success=False, output="",
+                error=f"RAG search error: {e}",
+                execution_time_ms=(time.time() - t0) * 1000,
+            )
 
     def execute(self, **kwargs) -> ToolResult:
         # Sync wrapper — the agent loop calls execute_async directly
@@ -335,6 +349,64 @@ class KnowledgeGraphTool:
 
     def execute(self, **kwargs) -> ToolResult:
         return ToolResult(tool_name="knowledge_graph", success=False, output="", error="Use execute_async for this tool")
+
+
+# ── Web Scraper Tool ───────────────────────────────────────
+
+class WebScraperTool:
+    """Fetch and extract main text content from a specific URL."""
+
+    definition = ToolDefinition(
+        name="web_scrape",
+        description="Fetch and extract main text content from a specific URL",
+        parameters=[
+            ToolParameter("url", "string", "The URL to fetch and extract text from"),
+            ToolParameter("max_chars", "number", "Maximum characters to return (default 3000)", required=False),
+        ],
+        category="web",
+    )
+
+    async def execute_async(self, url: str, max_chars: int = 3000) -> ToolResult:
+        t0 = time.time()
+        try:
+            import httpx
+            from bs4 import BeautifulSoup
+
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                response = await client.get(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                })
+
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Remove non-content tags
+            for tag in soup(["script", "style", "nav", "footer", "header"]):
+                tag.decompose()
+
+            text = soup.get_text(separator="\n", strip=True)
+
+            # Collapse excessive whitespace
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            text = "\n".join(lines)
+
+            # Truncate to max_chars
+            if len(text) > max_chars:
+                text = text[:max_chars] + "\n... (truncated)"
+
+            return ToolResult(
+                tool_name="web_scrape", success=True,
+                output=text or "(no text content extracted)",
+                execution_time_ms=(time.time() - t0) * 1000,
+            )
+        except Exception as e:
+            return ToolResult(
+                tool_name="web_scrape", success=False, output="",
+                error=f"Web scrape error: {e}",
+                execution_time_ms=(time.time() - t0) * 1000,
+            )
+
+    def execute(self, **kwargs) -> ToolResult:
+        return ToolResult(tool_name="web_scrape", success=False, output="", error="Use execute_async for this tool")
 
 
 # ── Agent Memory Tool ──────────────────────────────────────
@@ -394,7 +466,7 @@ class AgentMemoryTool:
 
 # ── Tool Registry ──────────────────────────────────────────
 
-ASYNC_TOOLS = {"rag_search", "knowledge_graph", "memory"}
+ASYNC_TOOLS = {"rag_search", "knowledge_graph", "memory", "web_scrape"}
 
 
 class ToolRegistry:
@@ -412,6 +484,7 @@ class ToolRegistry:
             (FileReaderTool.definition, FileReaderTool()),
             (FileWriterTool.definition, FileWriterTool()),
             (WebSearchTool.definition, WebSearchTool()),
+            (WebScraperTool.definition, WebScraperTool()),
             (DateTimeTool.definition, DateTimeTool()),
             (RAGSearchTool.definition, RAGSearchTool()),
             (KnowledgeGraphTool.definition, KnowledgeGraphTool()),
@@ -601,6 +674,57 @@ class ReActAgent:
                 lines.append(f"Observation: {obs}")
         return "\n".join(lines)
 
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count using a simple word_count * 1.3 heuristic."""
+        return int(len(text.split()) * 1.3)
+
+    def _build_messages_with_budget(self, system_prompt: str, query: str, steps: list[AgentStep], max_context_tokens: int = 4096) -> list[dict]:
+        """
+        Build messages list with context budget management.
+
+        Starts with system prompt + query, then adds steps from most recent
+        backwards until the token budget is exceeded. Truncates long observations
+        to 1000 chars.
+        """
+        messages = [{"role": "system", "content": system_prompt}]
+        budget_used = self._estimate_tokens(system_prompt)
+
+        # Reserve budget for query
+        query_content = f"Query: {query}"
+        budget_used += self._estimate_tokens(query_content)
+
+        # Build step messages from most recent backwards
+        step_messages = []
+        for step in reversed(steps):
+            lines = []
+            if step.thought:
+                lines.append(f"Thought: {step.thought}")
+            if step.action:
+                lines.append(f"Action: {step.action}")
+                lines.append(f"Action Input: {json.dumps(step.action_input)}")
+            if step.observation:
+                obs = step.observation
+                if len(obs) > 1000:
+                    obs = obs[:1000] + "\n... (truncated)"
+                lines.append(f"Observation: {obs}")
+
+            step_text = "\n".join(lines)
+            step_tokens = self._estimate_tokens(step_text)
+
+            if budget_used + step_tokens > max_context_tokens:
+                break
+
+            budget_used += step_tokens
+            step_messages.insert(0, step_text)
+
+        # Combine steps into scratchpad
+        scratchpad = "\n".join(step_messages)
+        if scratchpad:
+            query_content += f"\n\n{scratchpad}\n\nContinue reasoning:"
+
+        messages.append({"role": "user", "content": query_content})
+        return messages
+
     async def run(
         self,
         query: str,
@@ -710,6 +834,7 @@ class ReActAgent:
         Streaming version of run() that yields events as they happen.
 
         Yields dicts with:
+          {"type": "thinking", "step": N, "content": "..."}
           {"type": "thought", "step": N, "content": "..."}
           {"type": "action", "step": N, "tool": "...", "input": {...}}
           {"type": "observation", "step": N, "content": "..."}
@@ -734,17 +859,16 @@ class ReActAgent:
         system_prompt = self.build_system_prompt(agent_memories)
 
         for step_num in range(1, max_steps + 1):
-            messages = [{"role": "system", "content": system_prompt}]
+            # Emit thinking event before each LLM call
+            yield {"type": "thinking", "step": step_num, "content": "Reasoning about next step..."}
+
+            # Build messages with context budget management
+            messages = self._build_messages_with_budget(system_prompt, query, steps)
 
             if conversation_context:
-                for msg in conversation_context[-6:]:
-                    messages.append(msg)
-
-            scratchpad = self.format_scratchpad(steps)
-            user_content = f"Query: {query}"
-            if scratchpad:
-                user_content += f"\n\n{scratchpad}\n\nContinue reasoning:"
-            messages.append({"role": "user", "content": user_content})
+                # Insert conversation context after system prompt
+                for i, msg in enumerate(conversation_context[-6:]):
+                    messages.insert(1 + i, msg)
 
             try:
                 response = await ollama_client.chat(

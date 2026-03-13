@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from storage.database import init_db
-from api import chat, models, conversations, system, distillation, documents, dashboard, graph, agent, openai_compat, export_import, threads
+from api import chat, models, conversations, system, distillation, documents, dashboard, graph, agent, openai_compat, export_import, threads, training
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -132,6 +132,7 @@ app.include_router(agent.router, tags=["Agent"])
 app.include_router(openai_compat.router, tags=["OpenAI-Compatible"])
 app.include_router(export_import.router, tags=["Export/Import"])
 app.include_router(threads.router, tags=["Threads"])
+app.include_router(training.router, tags=["Training"])
 
 
 # Dashboard metrics middleware

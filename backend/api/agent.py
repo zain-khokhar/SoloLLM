@@ -33,6 +33,7 @@ class AgentRunRequest(BaseModel):
     query: str = Field(..., min_length=1)
     model: str | None = None
     max_steps: int = 10
+    reasoning_model: str | None = None
 
 
 class AgentMemoryCreate(BaseModel):
@@ -153,7 +154,13 @@ async def run_agent_stream(request: AgentRunRequest):
             ):
                 event_type = event.get("type", "")
 
-                if event_type == "thought":
+                if event_type == "thinking":
+                    yield {
+                        "event": "thinking",
+                        "data": json.dumps({"step": event["step"], "content": event["content"]}),
+                    }
+
+                elif event_type == "thought":
                     yield {
                         "event": "thought",
                         "data": json.dumps({"step": event["step"], "content": event["content"]}),

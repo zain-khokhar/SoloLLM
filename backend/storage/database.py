@@ -183,6 +183,15 @@ async def init_db():
         if "thread_id" not in columns:
             await db.execute("ALTER TABLE messages ADD COLUMN thread_id TEXT")
             await db.commit()
+        # Migration: add context management columns to thread_settings if missing
+        cursor = await db.execute("PRAGMA table_info(thread_settings)")
+        ts_columns = [row[1] for row in await cursor.fetchall()]
+        if "max_history_messages" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN max_history_messages INTEGER DEFAULT 20")
+            await db.commit()
+        if "compression_ratio" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN compression_ratio REAL DEFAULT 0.6")
+            await db.commit()
     finally:
         await db.close()
 
@@ -203,7 +212,7 @@ async def create_conversation(title: str, model: str, system_prompt: str = "") -
         await db.execute(
             """INSERT INTO threads (id, conversation_id, title, system_prompt, context_mode, is_default, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (tid, cid, "Thread 1", "", "isolated", 0, now, now),
+            (tid, cid, "Thread 1", "", "isolated", 1, now, now),
         )
         await db.execute(
             "INSERT INTO thread_settings (thread_id) VALUES (?)",
@@ -314,10 +323,19 @@ async def get_messages(conversation_id: str, thread_id: str | None = None) -> li
                 (conversation_id, thread_id),
             )
         else:
-            cursor = await db.execute(
-                "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
-                (conversation_id,),
-            )
+            # FIXED: When no thread_id, resolve to default thread to prevent cross-thread leakage
+            default_thread = await get_default_thread(conversation_id)
+            if default_thread:
+                cursor = await db.execute(
+                    "SELECT * FROM messages WHERE conversation_id = ? AND thread_id = ? ORDER BY created_at ASC",
+                    (conversation_id, default_thread["id"]),
+                )
+            else:
+                # No threads exist yet — return all messages (legacy conversations)
+                cursor = await db.execute(
+                    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
+                    (conversation_id,),
+                )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -745,7 +763,7 @@ async def get_thread_settings(thread_id: str) -> dict | None:
 async def update_thread_settings(thread_id: str, **kwargs) -> bool:
     db = await get_db()
     try:
-        allowed = {"max_tokens", "temperature", "rag_enabled", "rag_top_k", "compression_enabled", "memory_layers"}
+        allowed = {"max_tokens", "temperature", "rag_enabled", "rag_top_k", "compression_enabled", "memory_layers", "max_history_messages", "compression_ratio"}
         fields = {k: v for k, v in kwargs.items() if k in allowed}
         if not fields:
             return False
@@ -827,5 +845,27 @@ async def get_all_context_pages(thread_id: str) -> list[dict]:
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def save_context_pages(thread_id: str, pages: list) -> None:
+    """Persist context pages to the database, replacing existing pages for this thread."""
+    db = await get_db()
+    try:
+        await db.execute("DELETE FROM context_pages WHERE thread_id = ?", (thread_id,))
+        now = _now()
+        for page in pages:
+            pid = new_id()
+            content = page.active_content if hasattr(page, 'active_content') else page.get("content", "")
+            token_count = page.token_count if hasattr(page, 'token_count') else page.get("token_count", 0)
+            page_number = page.page_number if hasattr(page, 'page_number') else page.get("page_number", 0)
+            is_active = page.is_active if hasattr(page, 'is_active') else page.get("is_active", True)
+            await db.execute(
+                """INSERT INTO context_pages (id, thread_id, page_number, content, token_count, is_active, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (pid, thread_id, page_number, content, token_count, int(is_active), now),
+            )
+        await db.commit()
     finally:
         await db.close()

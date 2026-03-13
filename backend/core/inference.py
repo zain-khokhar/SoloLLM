@@ -57,6 +57,30 @@ class OllamaClient:
                         except json.JSONDecodeError:
                             continue
 
+    async def show_model(self, name: str) -> dict:
+        """Get detailed model information including context window size."""
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/show",
+                json={"name": name},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            model_info = data.get("model_info", {})
+
+            context_length = None
+            for key, value in model_info.items():
+                if "context_length" in key:
+                    context_length = value
+                    break
+
+            return {
+                "name": name,
+                "context_length": context_length,
+                "details": data.get("details", {}),
+                "parameters": data.get("parameters", ""),
+            }
+
     async def delete_model(self, name: str) -> bool:
         """Delete a local model."""
         async with httpx.AsyncClient() as client:

@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   X,
   BookOpen,
+  Clock,
 } from "lucide-react";
 import {
   listAgentTools,
@@ -29,8 +30,9 @@ import {
   deleteAgentMemory,
   clearAgentMemories,
   getAgentRuns,
+  listModels,
 } from "@/lib/api";
-import type { AgentTool, AgentMemory, AgentRun } from "@/types";
+import type { AgentTool, AgentMemory, AgentRun, ModelInfo } from "@/types";
 
 interface AgentViewProps {
   onBack: () => void;
@@ -45,6 +47,7 @@ interface AgentStepDisplay {
   content: string;
   tool?: string;
   input?: Record<string, unknown>;
+  elapsedMs?: number;
 }
 
 export default function AgentView({
@@ -58,6 +61,18 @@ export default function AgentView({
   const [finalAnswer, setFinalAnswer] = useState("");
   const [toolsUsed, setToolsUsed] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isThinking, setIsThinking] = useState(false);
+  const [thinkingStep, setThinkingStep] = useState(0);
+
+  // Model selector
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [selectedAgentModel, setSelectedAgentModel] = useState(selectedModel);
+  const [reasoningModel, setReasoningModel] = useState<string>("");
+
+  // Elapsed time tracking
+  const [runStartTime, setRunStartTime] = useState<number | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const stepStartRef = useRef<number>(Date.now());
 
   // Tools tab
   const [tools, setTools] = useState<AgentTool[]>([]);
@@ -81,6 +96,27 @@ export default function AgentView({
   useEffect(() => {
     stepsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [steps]);
+
+  // Elapsed time timer
+  useEffect(() => {
+    if (!isRunning || !runStartTime) return;
+    const interval = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - runStartTime) / 1000));
+    }, 200);
+    return () => clearInterval(interval);
+  }, [isRunning, runStartTime]);
+
+  // Load models
+  useEffect(() => {
+    listModels()
+      .then((m) => setModels(m))
+      .catch(() => {});
+  }, []);
+
+  // Sync selectedModel prop
+  useEffect(() => {
+    setSelectedAgentModel(selectedModel);
+  }, [selectedModel]);
 
   // Load tools
   const loadTools = useCallback(async () => {
@@ -132,30 +168,51 @@ export default function AgentView({
     setFinalAnswer("");
     setToolsUsed([]);
     setError(null);
+    setIsThinking(false);
+    setThinkingStep(0);
+    setRunStartTime(Date.now());
+    setElapsedTime(0);
+    stepStartRef.current = Date.now();
 
     const controller = streamAgentRun(
-      { query: query.trim(), model: selectedModel, max_steps: 10 },
       {
+        query: query.trim(),
+        model: selectedAgentModel,
+        max_steps: 10,
+        reasoning_model: reasoningModel || undefined,
+      },
+      {
+        onThinking: (step, _content) => {
+          setIsThinking(true);
+          setThinkingStep(step);
+          stepStartRef.current = Date.now();
+        },
         onThought: (step, content) => {
+          const elapsed = Date.now() - stepStartRef.current;
+          setIsThinking(false);
           setSteps((prev) => [
             ...prev,
-            { step, type: "thought", content },
+            { step, type: "thought", content, elapsedMs: elapsed },
           ]);
         },
         onAction: (step, tool, input) => {
+          const elapsed = Date.now() - stepStartRef.current;
+          setIsThinking(false);
           setSteps((prev) => [
             ...prev,
-            { step, type: "action", content: `Using ${tool}`, tool, input },
+            { step, type: "action", content: `Using ${tool}`, tool, input, elapsedMs: elapsed },
           ]);
         },
         onObservation: (step, content) => {
+          const elapsed = Date.now() - stepStartRef.current;
           setSteps((prev) => [
             ...prev,
-            { step, type: "observation", content },
+            { step, type: "observation", content, elapsedMs: elapsed },
           ]);
         },
         onAnswer: (content, _totalSteps, used) => {
           setIsRunning(false);
+          setIsThinking(false);
           setFinalAnswer(content);
           setToolsUsed(used);
           setSteps((prev) => [
@@ -165,6 +222,7 @@ export default function AgentView({
         },
         onError: (err) => {
           setIsRunning(false);
+          setIsThinking(false);
           setError(err);
           setSteps((prev) => [
             ...prev,
@@ -174,7 +232,7 @@ export default function AgentView({
       }
     );
     abortRef.current = controller;
-  }, [query, isRunning, selectedModel]);
+  }, [query, isRunning, selectedAgentModel, reasoningModel]);
 
   const handleStop = useCallback(() => {
     if (abortRef.current) {
@@ -292,6 +350,47 @@ export default function AgentView({
           Phase 5
         </span>
 
+        {/* Model Selectors */}
+        <div className="flex items-center gap-2 ml-2">
+          <select
+            value={selectedAgentModel}
+            onChange={(e) => setSelectedAgentModel(e.target.value)}
+            className="text-xs px-2 py-1 rounded-lg bg-transparent outline-none"
+            style={{
+              color: "var(--text-secondary)",
+              border: "1px solid var(--border-color)",
+              background: "var(--bg-secondary)",
+              maxWidth: 150,
+            }}
+            title="Agent model"
+          >
+            {models.map((m) => (
+              <option key={m.name} value={m.name}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={reasoningModel}
+            onChange={(e) => setReasoningModel(e.target.value)}
+            className="text-xs px-2 py-1 rounded-lg bg-transparent outline-none"
+            style={{
+              color: "var(--text-muted)",
+              border: "1px solid var(--border-color)",
+              background: "var(--bg-secondary)",
+              maxWidth: 150,
+            }}
+            title="Reasoning model (optional)"
+          >
+            <option value="">No reasoning model</option>
+            {models.map((m) => (
+              <option key={m.name} value={m.name}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Tabs */}
         <div className="flex gap-1 ml-auto">
           {tabs.map((tab) => (
@@ -337,6 +436,9 @@ export default function AgentView({
             onStop={handleStop}
             onKeyDown={handleKeyDown}
             stepsEndRef={stepsEndRef}
+            isThinking={isThinking}
+            thinkingStep={thinkingStep}
+            elapsedTime={elapsedTime}
           />
         )}
         {activeTab === "tools" && (
@@ -383,6 +485,9 @@ function AgentTab({
   onStop,
   onKeyDown,
   stepsEndRef,
+  isThinking,
+  thinkingStep,
+  elapsedTime,
 }: {
   query: string;
   setQuery: (q: string) => void;
@@ -395,6 +500,9 @@ function AgentTab({
   onStop: () => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   stepsEndRef: React.RefObject<HTMLDivElement | null>;
+  isThinking: boolean;
+  thinkingStep: number;
+  elapsedTime: number;
 }) {
   return (
     <div className="flex flex-col h-full">
@@ -463,12 +571,20 @@ function AgentTab({
             {steps.map((step, idx) => (
               <StepCard key={idx} step={step} />
             ))}
-            {isRunning && (
+            {isRunning && isThinking && (
+              <div className="flex items-center gap-2 px-4 py-3" style={{ color: "var(--text-muted)" }}>
+                <Brain size={14} className="animate-pulse" style={{ color: "var(--accent)" }} />
+                <span className="text-xs">Thinking...</span>
+                <span className="text-[10px]">{elapsedTime}s</span>
+              </div>
+            )}
+            {isRunning && !isThinking && (
               <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background: "var(--bg-secondary)" }}>
                 <Loader2 size={14} className="animate-spin" style={{ color: "var(--accent)" }} />
                 <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                  Agent is thinking...
+                  Agent is working...
                 </span>
+                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{elapsedTime}s</span>
               </div>
             )}
             <div ref={stepsEndRef} />
@@ -623,6 +739,15 @@ function StepCard({ step }: { step: AgentStepDisplay }) {
             }}
           >
             {step.tool}
+          </span>
+        )}
+        {step.elapsedMs !== undefined && step.elapsedMs > 0 && (
+          <span
+            className="text-[10px] ml-1 flex items-center gap-0.5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <Clock size={10} />
+            {(step.elapsedMs / 1000).toFixed(1)}s
           </span>
         )}
         <span className="ml-auto">

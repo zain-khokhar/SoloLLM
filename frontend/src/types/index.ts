@@ -350,3 +350,101 @@ export interface ModelCatalogResponse {
     ram_mb: number | null;
   };
 }
+
+// ── Thread types ────────────────────────────────────────────
+
+export interface Thread {
+  id: string;
+  conversation_id: string;
+  title: string;
+  system_prompt: string;
+  context_mode: "isolated" | "shared";
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ThreadSettings {
+  thread_id: string;
+  max_tokens: number | null;
+  temperature: number | null;
+  rag_enabled: boolean;
+  rag_top_k: number;
+  compression_enabled: boolean;
+  memory_layers: number;
+  max_history_messages: number;
+  compression_ratio: number;
+}
+
+export interface ThreadContextPage {
+  id: string;
+  thread_id: string;
+  page_number: number;
+  content: string;
+  token_count: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+// ── Document / RAG types ────────────────────────────────────
+
+export interface DocumentInfo {
+  document_id: string;
+  filename: string;
+  title: string;
+  file_type: string;
+  chunk_count: number;
+  page_count: number;
+  workspace_id: string;
+  created_at: string;
+}
+
+export interface Citation {
+  index: number;
+  document_title: string;
+  section_title: string;
+  page_number: number | null;
+  document_id: string;
+  chunk_id: string;
+  relevance_score: number;
+  excerpt: string;
+}
+
+export interface RAGStats {
+  workspace_id: string;
+  document_count: number;
+  chunk_count: number;
+  embedding_info: Record<string, unknown>;
+}
+
+// ── Training types ──────────────────────────────────────────
+
+export interface TrainingStatus {
+  status: "idle" | "preparing_data" | "downloading_base_model" | "training" | "exporting_gguf" | "registering_with_ollama" | "complete" | "error";
+  current_step: number;
+  total_steps: number;
+  loss: number;
+  epoch: number;
+  message: string;
+  error: string | null;
+}
+
+export interface TrainingDataPreview {
+  total_examples: number;
+  preview: Array<{
+    instruction: string;
+    input: string;
+    output: string;
+    conversation_id: string;
+  }>;
+  conversations_used: number;
+}
+
+// ── Model Info types ────────────────────────────────────────
+
+export interface ModelDetailInfo {
+  name: string;
+  context_length: number | null;
+  details: Record<string, unknown>;
+  parameters: string;
+}

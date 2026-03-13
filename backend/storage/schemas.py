@@ -168,3 +168,5 @@ class ThreadSettingsUpdate(BaseModel):
     rag_top_k: Optional[int] = None
     compression_enabled: Optional[bool] = None
     memory_layers: Optional[int] = None
+    max_history_messages: Optional[int] = None
+    compression_ratio: Optional[float] = None

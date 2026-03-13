@@ -77,3 +77,15 @@ async def delete_model(model_name: str):
         return {"status": "deleted", "model": model_name}
     else:
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found or could not be deleted")
+
+
+@router.get("/models/{model_name:path}/info")
+async def get_model_info(model_name: str):
+    """Get detailed model info including context window size."""
+    if not await ollama_client.is_available():
+        raise HTTPException(status_code=503, detail="Ollama is not running.")
+    try:
+        info = await ollama_client.show_model(model_name)
+        return {"info": info}
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))

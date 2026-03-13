@@ -10,6 +10,7 @@ from core.token_budget import TokenTracker, estimate_token_count
 from core.continuation import detect_truncation, build_continuation_messages, stitch_content
 from core.kv_cache import kv_cache_manager
 from core.context_manager import thread_context_builder
+from core.intent_classifier import classify as classify_intent
 from core.distillation import (
     distillation_pipeline, conversation_memory, confidence_scorer,
     self_verifier, prompt_engine,
@@ -162,6 +163,9 @@ async def chat(request: ChatRequest):
             # Fallback: if conversation was created above, use the auto-created thread
             thread_id = conversation.get("default_thread_id")
 
+    if not thread_id:
+        raise HTTPException(status_code=400, detail="No thread found for this conversation. Cannot proceed without context isolation.")
+
     # Load thread settings for this specific thread
     thread_settings_data = None
     thread = None
@@ -184,6 +188,22 @@ async def chat(request: ChatRequest):
     # Get ONLY messages for this thread (context isolation!)
     db_messages = await get_messages(conversation_id, thread_id=thread_id)
 
+    # Smart Context: classify intent to determine optimal history depth
+    intent = classify_intent(request.message, len(db_messages))
+    logger.info(f"Intent classified: {intent['intent']} (confidence={intent['confidence']:.2f}, depth={intent['history_depth']})")
+
+    # Apply intent-based message filtering before context building
+    if intent["history_depth"] == 0:
+        # Standalone — only include the current user message
+        context_messages = [msg for msg in db_messages if msg.get("role") == "user"][-1:]
+    elif intent["history_depth"] == -1:
+        # Full history — include all messages
+        context_messages = db_messages
+    else:
+        # Recent context — take the last N messages
+        depth = intent["history_depth"]
+        context_messages = db_messages[-depth:] if len(db_messages) > depth else db_messages
+
     # Determine system prompt — thread-specific takes priority
     system_prompt = request.system_prompt or ""
     if thread and thread.get("system_prompt"):
@@ -204,7 +224,9 @@ async def chat(request: ChatRequest):
     # CRITICAL: Only run RAG if this thread has attached documents.
     # If no documents are attached, skip entirely — the thread should start clean.
     rag_enabled_for_thread = (thread_settings_data or {}).get("rag_enabled", True)
-    if settings.distillation_enabled and rag_enabled_for_thread and thread_doc_ids:
+    # Smart Context: only run RAG when intent says so AND conditions are met
+    should_run_rag = intent["needs_rag"] or (settings.distillation_enabled and rag_enabled_for_thread and thread_doc_ids)
+    if should_run_rag and thread_doc_ids:
         try:
             from rag.pipeline import rag_pipeline
             workspace_id = request.workspace_id if hasattr(request, 'workspace_id') else "default"
@@ -281,11 +303,13 @@ async def chat(request: ChatRequest):
             logger.warning(f"Distillation pipeline error (falling back to standard): {e}")
 
     # Build context using thread-aware context builder (ISOLATED)
+    # Use intent-filtered messages instead of all db_messages
     ollama_messages = thread_context_builder.build_isolated_context(
-        thread_messages=db_messages,
+        thread_messages=context_messages,
         system_prompt=system_prompt,
         thread_settings=thread_settings_data,
         current_query=request.message,
+        thread_id=thread_id,
     )
 
     # Create placeholder assistant message — scoped to this thread

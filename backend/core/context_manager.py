@@ -302,16 +302,19 @@ class ThreadContextBuilder:
         system_prompt: str = "",
         thread_settings: dict | None = None,
         current_query: str = "",
+        thread_id: str | None = None,
     ) -> list[dict]:
         """
         Build a fully isolated context for this thread.
         Only messages belonging to this thread are included.
         """
         ts = thread_settings or {}
-        max_history = ts.get("max_history_messages", 20)
-        max_tokens = ts.get("context_window_size", 4096)
-        kv_compression = ts.get("kv_compression_enabled", False)
-        memory_mode = ts.get("memory_layer_mode", "none")
+        # Map DB column names to context manager keys
+        max_history = ts.get("max_history_messages") or 20
+        max_tokens = ts.get("max_tokens") or 4096
+        kv_compression = bool(ts.get("compression_enabled", 0))
+        memory_layers = ts.get("memory_layers") or 0
+        memory_mode = "virtual_paging" if memory_layers > 1 else ("sliding_window" if memory_layers == 1 else "none")
 
         ollama_messages = []
 
@@ -327,8 +330,20 @@ class ThreadContextBuilder:
 
         # Apply memory layer strategy
         if memory_mode == "virtual_paging" and len(history) > max_history:
-            context = self._apply_virtual_paging(history, max_tokens, current_query)
+            context, pages = self._apply_virtual_paging(history, max_tokens, current_query)
             if context:
+                # Persist pages to database if thread_id is available
+                if thread_id and pages:
+                    import asyncio
+                    try:
+                        from storage.database import save_context_pages
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            asyncio.ensure_future(save_context_pages(thread_id, pages))
+                        else:
+                            loop.run_until_complete(save_context_pages(thread_id, pages))
+                    except Exception as e:
+                        logger.warning(f"Failed to persist context pages: {e}")
                 # Insert paged context as a system-level summary
                 ollama_messages.append({
                     "role": "system",
@@ -363,15 +378,15 @@ class ThreadContextBuilder:
 
     def _apply_virtual_paging(
         self, messages: list[dict], max_tokens: int, query: str,
-    ) -> str:
-        """Apply MemGPT-style virtual paging to old context."""
+    ) -> tuple[str, list]:
+        """Apply MemGPT-style virtual paging to old context. Returns (context_str, pages)."""
         self._memory_manager.max_active_tokens = max_tokens // 2  # Reserve half for recent
         pages = self._memory_manager.create_pages_from_messages(messages[:-6])
 
         if query:
             pages = self._memory_manager.page_in_relevant(pages, query)
 
-        return self._memory_manager.get_active_context(pages)
+        return self._memory_manager.get_active_context(pages), pages
 
 
 # Singleton instances

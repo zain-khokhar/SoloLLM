@@ -1,22 +1,25 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronDown, Cpu, Check } from "lucide-react";
 import { ModelInfo } from "@/types";
-import { listModels } from "@/lib/api";
+import { listModels, getModelInfo } from "@/lib/api";
 
 interface ModelSelectorProps {
   selectedModel: string;
   onSelectModel: (model: string) => void;
+  onContextLengthChange?: (contextLength: number | null) => void;
 }
 
 export default function ModelSelector({
   selectedModel,
   onSelectModel,
+  onContextLengthChange,
 }: ModelSelectorProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contextLength, setContextLength] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,6 +34,20 @@ export default function ModelSelector({
     };
     load();
   }, []);
+
+  // Fetch context length when selected model changes
+  useEffect(() => {
+    if (!selectedModel) return;
+    getModelInfo(selectedModel)
+      .then((info) => {
+        setContextLength(info.context_length);
+        onContextLengthChange?.(info.context_length);
+      })
+      .catch(() => {
+        setContextLength(null);
+        onContextLengthChange?.(null);
+      });
+  }, [selectedModel, onContextLengthChange]);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -57,6 +74,11 @@ export default function ModelSelector({
     const size = model.parameter_size || formatSize(model.size);
     if (!size) return null;
     return size;
+  };
+
+  const formatContextLength = (ctx: number) => {
+    if (ctx >= 1024) return `${Math.round(ctx / 1024)}K`;
+    return `${ctx}`;
   };
 
   return (
@@ -96,6 +118,17 @@ export default function ModelSelector({
         <span className="max-w-44 truncate font-medium">
           {error || selectedModel || "Select model"}
         </span>
+        {contextLength && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-md font-medium"
+            style={{
+              background: "var(--accent-muted)",
+              color: "var(--accent)",
+            }}
+          >
+            {formatContextLength(contextLength)} ctx
+          </span>
+        )}
         <ChevronDown
           size={14}
           className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`}

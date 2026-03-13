@@ -13,6 +13,7 @@ import DashboardView from "@/components/dashboard/DashboardView";
 import ExportImportView from "@/components/export/ExportImportView";
 import SetupWizard from "@/components/setup/SetupWizard";
 import ModelPicker from "@/components/setup/ModelPicker";
+import TrainingView from "@/components/training/TrainingView";
 import { streamChat, streamContinuation, getConversation, getThread, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels, uploadDocument, attachDocumentToThread, getThreadDocuments, listDocuments, detachDocumentFromThread } from "@/lib/api";
 import { DistillationMeta, Thread, DocumentInfo } from "@/types";
 import {
@@ -46,7 +47,7 @@ interface TruncationInfo {
 
 export default function Home() {
   const [showSetup, setShowSetup] = useState<boolean | null>(null); // null = checking
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "graph" | "agent" | "dashboard" | "export" | "models">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "graph" | "agent" | "dashboard" | "export" | "models" | "training">("chat");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -62,6 +63,7 @@ export default function Home() {
   const [distillationMeta, setDistillationMeta] = useState<DistillationMeta | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [threadDocuments, setThreadDocuments] = useState<{ document_id: string; title?: string }[]>([]);
+  const [contextLimit, setContextLimit] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // Check if we need to show the setup wizard
@@ -347,9 +349,13 @@ export default function Home() {
       if (result.success && result.document_id) {
         // Attach to current thread for scoped RAG retrieval
         await attachDocumentToThread(activeThreadId, result.document_id);
-        // Refresh thread documents
+        // Refresh thread documents with filename info
         const docs = await getThreadDocuments(activeThreadId);
-        setThreadDocuments(docs.documents || []);
+        const enrichedDocs = (docs.documents || []).map((d: { document_id: string; [key: string]: unknown }) => ({
+          ...d,
+          title: d.document_id === result.document_id ? result.filename : (d as { title?: string }).title,
+        }));
+        setThreadDocuments(enrichedDocs);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Document upload failed");
@@ -388,6 +394,7 @@ export default function Home() {
         onOpenDashboard={() => setCurrentView("dashboard")}
         onOpenExport={() => setCurrentView("export")}
         onOpenModels={() => setCurrentView("models")}
+        onOpenTraining={() => setCurrentView("training")}
         refreshTrigger={refreshSidebar}
       />
 
@@ -404,6 +411,8 @@ export default function Home() {
           onBack={() => setCurrentView("chat")}
           onImportComplete={() => setRefreshSidebar((prev) => prev + 1)}
         />
+      ) : currentView === "training" ? (
+        <TrainingView onBack={() => setCurrentView("chat")} selectedModel={selectedModel} />
       ) : currentView === "models" ? (
         <div className="flex-1 flex flex-col h-screen" style={{ background: "var(--bg-primary)" }}>
           <div
@@ -447,6 +456,7 @@ export default function Home() {
             <ModelSelector
               selectedModel={selectedModel}
               onSelectModel={setSelectedModel}
+              onContextLengthChange={setContextLimit}
             />
             <div className="flex items-center gap-2">
               {error && (
@@ -528,7 +538,7 @@ export default function Home() {
                   }}
                 >
                   <FileText size={10} />
-                  {doc.document_id.slice(0, 8)}...
+                  {doc.title || doc.document_id.slice(0, 12) + "..."}
                   <button
                     onClick={() => handleDetachDocument(doc.document_id)}
                     className="ml-0.5 p-0.5 rounded hover:bg-red-500/20 transition-colors"
@@ -548,6 +558,7 @@ export default function Home() {
             isGenerating={isStreaming}
             onUploadDocument={handleUploadDocument}
             isUploading={isUploading}
+            contextLimit={contextLimit}
           />
 
           {/* Thread Settings Slide-over Panel */}

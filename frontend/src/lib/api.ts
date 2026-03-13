@@ -2,6 +2,7 @@ import {
   Conversation,
   Message,
   ModelInfo,
+  ModelDetailInfo,
   AppSettings,
   SystemProfile,
   DistillationMeta,
@@ -27,6 +28,8 @@ import {
   DocumentInfo,
   Citation,
   RAGStats,
+  TrainingStatus,
+  TrainingDataPreview,
 } from "@/types";
 
 const API_BASE = "/api";
@@ -63,6 +66,13 @@ export async function listModels(): Promise<ModelInfo[]> {
 
 export async function deleteModel(name: string): Promise<void> {
   await fetchJSON(`/models/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export async function getModelInfo(modelName: string): Promise<ModelDetailInfo> {
+  const data = await fetchJSON<{ info: ModelDetailInfo }>(
+    `/models/${encodeURIComponent(modelName)}/info`
+  );
+  return data.info;
 }
 
 // ── Conversations ──────────────────────────────────────────
@@ -626,10 +636,11 @@ export interface AgentStreamCallbacks {
   onObservation: (step: number, content: string) => void;
   onAnswer: (content: string, totalSteps: number, toolsUsed: string[]) => void;
   onError: (error: string) => void;
+  onThinking?: (step: number, content: string) => void;
 }
 
 export function streamAgentRun(
-  params: { query: string; model?: string; max_steps?: number },
+  params: { query: string; model?: string; max_steps?: number; reasoning_model?: string },
   callbacks: AgentStreamCallbacks
 ): AbortController {
   const controller = new AbortController();
@@ -674,6 +685,9 @@ export function streamAgentRun(
             try {
               const data = JSON.parse(dataStr);
               switch (eventType) {
+                case "thinking":
+                  callbacks.onThinking?.(data.step, data.content);
+                  break;
                 case "thought":
                   callbacks.onThought(data.step, data.content);
                   break;
@@ -993,4 +1007,38 @@ export async function getRAGStats(
   workspaceId: string = "default"
 ): Promise<RAGStats> {
   return fetchJSON(`/documents/stats/${encodeURIComponent(workspaceId)}`);
+}
+
+// ── Training API ──────────────────────────────────────────
+
+export async function startTraining(params: {
+  model: string;
+  output_name?: string;
+  conversation_ids?: string[];
+  lora_rank?: number;
+  num_epochs?: number;
+  learning_rate?: number;
+  max_seq_length?: number;
+}): Promise<{ status: string; examples: number; base_model: string }> {
+  return fetchJSON("/training/start", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export async function getTrainingStatus(): Promise<TrainingStatus> {
+  return fetchJSON("/training/status");
+}
+
+export async function cancelTraining(): Promise<{ status: string }> {
+  return fetchJSON("/training/cancel", { method: "POST" });
+}
+
+export async function previewTrainingData(
+  conversationIds?: string[]
+): Promise<TrainingDataPreview> {
+  const url = conversationIds
+    ? `/training/data/preview?conversation_ids=${conversationIds.join(",")}`
+    : "/training/data/preview";
+  return fetchJSON(url);
 }

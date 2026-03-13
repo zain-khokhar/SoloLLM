@@ -15,6 +15,7 @@ import {
   Activity,
   ArrowDownUp,
   HardDrive,
+  GraduationCap,
 } from "lucide-react";
 import { Conversation } from "@/types";
 import { listConversations, deleteConversation } from "@/lib/api";
@@ -29,6 +30,7 @@ interface SidebarProps {
   onOpenDashboard: () => void;
   onOpenExport: () => void;
   onOpenModels: () => void;
+  onOpenTraining: () => void;
   refreshTrigger: number;
 }
 
@@ -42,6 +44,7 @@ export default function Sidebar({
   onOpenDashboard,
   onOpenExport,
   onOpenModels,
+  onOpenTraining,
   refreshTrigger,
 }: SidebarProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -199,6 +202,23 @@ export default function Sidebar({
           title="Models"
         >
           <HardDrive size={18} />
+        </button>
+
+        <button
+          onClick={onOpenTraining}
+          className="p-2.5 rounded-xl transition-smooth"
+          style={{ color: "var(--text-muted)" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-hover)";
+            e.currentTarget.style.color = "var(--text-primary)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "var(--text-muted)";
+          }}
+          title="Self-Training"
+        >
+          <GraduationCap size={18} />
         </button>
 
         <button
@@ -472,6 +492,22 @@ export default function Sidebar({
         >
           <HardDrive size={15} />
           Models
+        </button>
+        <button
+          onClick={onOpenTraining}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-smooth"
+          style={{ color: "var(--text-secondary)" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-hover)";
+            e.currentTarget.style.color = "var(--text-primary)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "var(--text-secondary)";
+          }}
+        >
+          <GraduationCap size={15} />
+          Self-Training
         </button>
         <button
           onClick={onOpenExport}
