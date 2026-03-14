@@ -1,26 +1,31 @@
-"""
-Vector Store for SoloLLM.
+"""FAISS-backed vector store for SoloLLM.
 
-SQLite-backed vector store with in-memory HNSW-like search.
-Uses numpy for efficient vector operations. Falls back to
-brute-force cosine similarity if the dataset is small.
-
-This avoids external dependencies like ChromaDB or Qdrant
-while still providing fast approximate nearest neighbor search.
+This module implements a real vector database layer by combining:
+1) FAISS for persistent ANN similarity search
+2) SQLite for document/chunk metadata and vector-id mapping
 """
 
+import asyncio
 import json
 import logging
-import aiosqlite
-import numpy as np
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
+import aiosqlite
+import numpy as np
+
 from core.config import settings
+
+try:
+    import faiss  # type: ignore
+except ImportError:  # pragma: no cover - runtime dependency check
+    faiss = None
 
 logger = logging.getLogger(__name__)
 
 VECTORS_DB_PATH = str(settings.data_dir / "db" / "vectors.db")
+VECTOR_INDEX_DIR = settings.data_dir / "db" / "vector_indexes"
 
 VECTOR_SCHEMA = """
 CREATE TABLE IF NOT EXISTS document_chunks (
@@ -40,6 +45,18 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON document_chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_workspace ON document_chunks(workspace_id);
+
+CREATE TABLE IF NOT EXISTS chunk_vectors (
+    chunk_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    vector_id INTEGER NOT NULL,
+    dimension INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (chunk_id) REFERENCES document_chunks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_vectors_workspace ON chunk_vectors(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_chunk_vectors_vector_id ON chunk_vectors(vector_id);
 
 CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY,
@@ -82,12 +99,81 @@ class SearchResult:
 
 
 class VectorStore:
-    """SQLite-backed vector store with numpy-based search."""
+    """FAISS-backed vector store with SQLite metadata."""
 
     def __init__(self, db_path: str = VECTORS_DB_PATH):
         self.db_path = db_path
-        # Ensure directory exists
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.index_dir = VECTOR_INDEX_DIR
+        self.index_dir.mkdir(parents=True, exist_ok=True)
+
+        self._workspace_indexes: dict[str, "faiss.IndexIDMap2"] = {}
+        self._index_lock = asyncio.Lock()
+
+    def _ensure_faiss_available(self):
+        if faiss is None:
+            raise RuntimeError(
+                "FAISS is not installed. Install dependency 'faiss-cpu' to enable vector search."
+            )
+
+    def _workspace_index_path(self, workspace_id: str) -> Path:
+        safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in workspace_id)
+        return self.index_dir / f"{safe}.faiss"
+
+    def _new_index(self, dimension: int) -> "faiss.IndexIDMap2":
+        self._ensure_faiss_available()
+        base = faiss.IndexFlatIP(dimension)
+        return faiss.IndexIDMap2(base)
+
+    async def _get_next_vector_id(self, db: aiosqlite.Connection, workspace_id: str) -> int:
+        cursor = await db.execute(
+            "SELECT COALESCE(MAX(vector_id), 0) AS max_id FROM chunk_vectors WHERE workspace_id = ?",
+            (workspace_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row["max_id"] if row and row["max_id"] is not None else 0) + 1
+
+    async def _get_workspace_dimension(self, db: aiosqlite.Connection, workspace_id: str) -> int | None:
+        cursor = await db.execute(
+            "SELECT dimension FROM chunk_vectors WHERE workspace_id = ? ORDER BY vector_id DESC LIMIT 1",
+            (workspace_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return int(row["dimension"])
+
+    def _load_workspace_index(self, workspace_id: str, dimension: int) -> "faiss.IndexIDMap2":
+        if workspace_id in self._workspace_indexes:
+            return self._workspace_indexes[workspace_id]
+
+        index_path = self._workspace_index_path(workspace_id)
+        if index_path.exists():
+            index = faiss.read_index(str(index_path))
+            if not isinstance(index, faiss.IndexIDMap2):
+                index = faiss.IndexIDMap2(index)
+            if index.d != dimension:
+                raise ValueError(
+                    f"Workspace '{workspace_id}' index dimension mismatch: "
+                    f"index={index.d}, embedding={dimension}"
+                )
+        else:
+            index = self._new_index(dimension)
+
+        self._workspace_indexes[workspace_id] = index
+        return index
+
+    def _save_workspace_index(self, workspace_id: str):
+        index = self._workspace_indexes.get(workspace_id)
+        if index is None:
+            return
+        faiss.write_index(index, str(self._workspace_index_path(workspace_id)))
+
+    @staticmethod
+    def _normalize_vectors(vectors: np.ndarray) -> np.ndarray:
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1e-12, norms)
+        return vectors / norms
 
     async def _get_db(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(self.db_path)
@@ -98,13 +184,89 @@ class VectorStore:
 
     async def init(self):
         """Initialize the vector store tables."""
+        self._ensure_faiss_available()
         db = await self._get_db()
         try:
             await db.executescript(VECTOR_SCHEMA)
+            await self._migrate_legacy_embeddings(db)
             await db.commit()
             logger.info("Vector store initialized")
         finally:
             await db.close()
+
+    async def _migrate_legacy_embeddings(self, db: aiosqlite.Connection):
+        """Migrate legacy SQLite BLOB embeddings into FAISS indexes once."""
+        cursor = await db.execute(
+            """SELECT dc.id AS chunk_id, dc.workspace_id, dc.embedding
+               FROM document_chunks dc
+               LEFT JOIN chunk_vectors cv ON cv.chunk_id = dc.id
+               WHERE dc.embedding IS NOT NULL AND cv.chunk_id IS NULL"""
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return
+
+        by_workspace: dict[str, list[dict]] = {}
+        for row in rows:
+            r = dict(row)
+            by_workspace.setdefault(r["workspace_id"], []).append(r)
+
+        migrated_total = 0
+        async with self._index_lock:
+            for workspace_id, workspace_rows in by_workspace.items():
+                vectors: list[np.ndarray] = []
+                chunk_ids: list[str] = []
+                for row in workspace_rows:
+                    emb_bytes = row.get("embedding")
+                    if not emb_bytes:
+                        continue
+                    vec = np.frombuffer(emb_bytes, dtype=np.float32)
+                    if vec.size == 0:
+                        continue
+                    vectors.append(vec)
+                    chunk_ids.append(row["chunk_id"])
+
+                if not vectors:
+                    continue
+
+                first_dim = int(vectors[0].shape[0])
+                filtered_pairs = [
+                    (cid, vec)
+                    for cid, vec in zip(chunk_ids, vectors)
+                    if int(vec.shape[0]) == first_dim
+                ]
+                if not filtered_pairs:
+                    continue
+
+                chunk_ids = [p[0] for p in filtered_pairs]
+                vectors_np = np.stack([p[1] for p in filtered_pairs]).astype(np.float32)
+                vectors_np = self._normalize_vectors(vectors_np)
+
+                next_vector_id = await self._get_next_vector_id(db, workspace_id)
+                vector_ids = np.arange(next_vector_id, next_vector_id + len(chunk_ids), dtype=np.int64)
+
+                index = self._load_workspace_index(workspace_id, first_dim)
+                index.add_with_ids(vectors_np, vector_ids)
+                self._save_workspace_index(workspace_id)
+
+                now = datetime.now(timezone.utc).isoformat()
+                for i, chunk_id in enumerate(chunk_ids):
+                    await db.execute(
+                        """INSERT OR REPLACE INTO chunk_vectors
+                           (chunk_id, workspace_id, vector_id, dimension, created_at)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (chunk_id, workspace_id, int(vector_ids[i]), first_dim, now),
+                    )
+                    # Clear legacy blob to reduce DB size after migration.
+                    await db.execute(
+                        "UPDATE document_chunks SET embedding = NULL WHERE id = ?",
+                        (chunk_id,),
+                    )
+
+                migrated_total += len(chunk_ids)
+
+        if migrated_total:
+            logger.info("Migrated %d legacy chunk embeddings into FAISS indexes", migrated_total)
 
     # ── Document Management ─────────────────────────────────
 
@@ -121,7 +283,6 @@ class VectorStore:
         metadata: dict | None = None,
     ):
         """Register a document in the store."""
-        from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
         db = await self._get_db()
         try:
@@ -152,9 +313,44 @@ class VectorStore:
             await db.close()
 
     async def delete_document(self, document_id: str):
-        """Delete a document and all its chunks."""
+        """Delete a document and all its vectors/chunks."""
         db = await self._get_db()
         try:
+            cursor = await db.execute("SELECT workspace_id FROM documents WHERE id = ?", (document_id,))
+            doc_row = await cursor.fetchone()
+            if not doc_row:
+                return
+
+            workspace_id = doc_row["workspace_id"]
+
+            cursor = await db.execute(
+                """SELECT cv.vector_id
+                   FROM chunk_vectors cv
+                   JOIN document_chunks dc ON dc.id = cv.chunk_id
+                   WHERE dc.document_id = ?""",
+                (document_id,),
+            )
+            rows = await cursor.fetchall()
+            vector_ids = [int(r["vector_id"]) for r in rows]
+
+            async with self._index_lock:
+                if vector_ids:
+                    # Resolve dimension from existing index when possible.
+                    index = self._workspace_indexes.get(workspace_id)
+                    if index is None and self._workspace_index_path(workspace_id).exists():
+                        dimension = await self._get_workspace_dimension(db, workspace_id)
+                        if dimension is not None:
+                            index = self._load_workspace_index(workspace_id, dimension)
+
+                    if index is not None:
+                        remove_ids = np.array(vector_ids, dtype=np.int64)
+                        index.remove_ids(remove_ids)
+                        self._save_workspace_index(workspace_id)
+
+            await db.execute(
+                "DELETE FROM chunk_vectors WHERE chunk_id IN (SELECT id FROM document_chunks WHERE document_id = ?)",
+                (document_id,),
+            )
             await db.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
             await db.execute("DELETE FROM documents WHERE id = ?", (document_id,))
             await db.commit()
@@ -185,15 +381,35 @@ class VectorStore:
         - id, document_id, content, embedding (list[float])
         - Optional: document_title, section_title, chunk_index, page_number, metadata
         """
-        from datetime import datetime, timezone
+        self._ensure_faiss_available()
+
         now = datetime.now(timezone.utc).isoformat()
+        if not chunks:
+            return
+
+        embeddings = []
+        valid_chunks = []
+        for chunk in chunks:
+            emb = chunk.get("embedding")
+            if not emb:
+                continue
+            embeddings.append(emb)
+            valid_chunks.append(chunk)
+
+        if not valid_chunks:
+            logger.warning("No chunks with embeddings to add")
+            return
+
+        vectors = np.asarray(embeddings, dtype=np.float32)
+        vectors = self._normalize_vectors(vectors)
+        dimension = int(vectors.shape[1])
+
         db = await self._get_db()
         try:
-            for chunk in chunks:
-                embedding_bytes = None
-                if chunk.get("embedding"):
-                    embedding_bytes = np.array(chunk["embedding"], dtype=np.float32).tobytes()
+            next_vector_id = await self._get_next_vector_id(db, workspace_id)
+            vector_ids = np.arange(next_vector_id, next_vector_id + len(valid_chunks), dtype=np.int64)
 
+            for i, chunk in enumerate(valid_chunks):
                 await db.execute(
                     """INSERT OR REPLACE INTO document_chunks
                        (id, document_id, workspace_id, content, document_title,
@@ -210,13 +426,31 @@ class VectorStore:
                         chunk.get("chunk_index", 0),
                         chunk.get("page_number"),
                         chunk.get("parent_chunk_id"),
-                        embedding_bytes,
+                        None,
                         json.dumps(chunk.get("metadata", {})),
                         now,
                     ),
                 )
+
+                await db.execute(
+                    """INSERT OR REPLACE INTO chunk_vectors
+                       (chunk_id, workspace_id, vector_id, dimension, created_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (chunk["id"], workspace_id, int(vector_ids[i]), dimension, now),
+                )
+
+            async with self._index_lock:
+                index = self._load_workspace_index(workspace_id, dimension)
+                index.add_with_ids(vectors, vector_ids)
+                self._save_workspace_index(workspace_id)
+
             await db.commit()
-            logger.info(f"Added {len(chunks)} chunks to vector store")
+            logger.info(
+                "Added %d chunks to FAISS index (%s), dimension=%d",
+                len(valid_chunks),
+                workspace_id,
+                dimension,
+            )
         finally:
             await db.close()
 
@@ -228,90 +462,98 @@ class VectorStore:
         document_id: str | None = None,
         document_ids: list[str] | None = None,
     ) -> list[SearchResult]:
-        """
-        Search for similar chunks using cosine similarity.
+        """Search for similar chunks using FAISS cosine similarity (IP on normalized vectors)."""
+        self._ensure_faiss_available()
 
-        Loads all embeddings from the workspace into memory
-        and performs brute-force cosine similarity search.
-        For datasets under ~100K chunks, this is fast enough.
+        query_vec = np.asarray([query_embedding], dtype=np.float32)
+        if query_vec.size == 0:
+            return []
+        query_vec = self._normalize_vectors(query_vec)
+        query_dim = int(query_vec.shape[1])
 
-        Args:
-            document_id: Filter to a single document (legacy)
-            document_ids: Filter to multiple documents (thread-scoped)
-        """
+        async with self._index_lock:
+            index = self._load_workspace_index(workspace_id, query_dim)
+            if index.ntotal == 0:
+                return []
+
+            # Over-fetch when metadata filters are applied.
+            filtered = bool(document_id or document_ids)
+            fetch_k = top_k if not filtered else max(top_k * 10, 100)
+            fetch_k = min(fetch_k, int(index.ntotal))
+
+            scores, ids = index.search(query_vec, fetch_k)
+            candidate_pairs = [
+                (int(vector_id), float(score))
+                for vector_id, score in zip(ids[0].tolist(), scores[0].tolist())
+                if int(vector_id) >= 0
+            ]
+
+        if not candidate_pairs:
+            return []
+
+        vector_ids = [p[0] for p in candidate_pairs]
+        score_by_vector_id = {p[0]: p[1] for p in candidate_pairs}
+
         db = await self._get_db()
         try:
+            placeholders = ",".join("?" for _ in vector_ids)
+            sql = (
+                """SELECT cv.vector_id, dc.id AS chunk_id, dc.document_id, dc.content,
+                          dc.document_title, dc.section_title, dc.chunk_index,
+                          dc.page_number, dc.metadata
+                   FROM chunk_vectors cv
+                   JOIN document_chunks dc ON dc.id = cv.chunk_id
+                   WHERE cv.workspace_id = ?
+                   AND cv.vector_id IN ("""
+                + placeholders
+                + ")"
+            )
+            params: list = [workspace_id, *vector_ids]
+
             if document_ids:
-                # Thread-scoped: only search within these specific documents
-                placeholders = ",".join("?" for _ in document_ids)
-                cursor = await db.execute(
-                    f"""SELECT id, document_id, content, document_title, section_title,
-                              chunk_index, page_number, embedding, metadata
-                       FROM document_chunks
-                       WHERE workspace_id = ? AND document_id IN ({placeholders}) AND embedding IS NOT NULL""",
-                    (workspace_id, *document_ids),
-                )
+                doc_placeholders = ",".join("?" for _ in document_ids)
+                sql += f" AND dc.document_id IN ({doc_placeholders})"
+                params.extend(document_ids)
             elif document_id:
-                cursor = await db.execute(
-                    """SELECT id, document_id, content, document_title, section_title,
-                              chunk_index, page_number, embedding, metadata
-                       FROM document_chunks
-                       WHERE workspace_id = ? AND document_id = ? AND embedding IS NOT NULL""",
-                    (workspace_id, document_id),
-                )
-            else:
-                cursor = await db.execute(
-                    """SELECT id, document_id, content, document_title, section_title,
-                              chunk_index, page_number, embedding, metadata
-                       FROM document_chunks
-                       WHERE workspace_id = ? AND embedding IS NOT NULL""",
-                    (workspace_id,),
-                )
+                sql += " AND dc.document_id = ?"
+                params.append(document_id)
+
+            cursor = await db.execute(sql, tuple(params))
             rows = await cursor.fetchall()
         finally:
             await db.close()
 
-        if not rows:
-            return []
+        row_by_vector_id = {int(r["vector_id"]): dict(r) for r in rows}
+        results: list[SearchResult] = []
 
-        # Convert query embedding to numpy
-        query_vec = np.array(query_embedding, dtype=np.float32)
-        query_norm = np.linalg.norm(query_vec)
-        if query_norm == 0:
-            return []
-        query_vec = query_vec / query_norm
-
-        # Compute similarities
-        results = []
-        for row in rows:
-            row_dict = dict(row)
-            emb_bytes = row_dict["embedding"]
-            if not emb_bytes:
+        for vector_id in vector_ids:
+            row = row_by_vector_id.get(vector_id)
+            if row is None:
                 continue
 
-            chunk_vec = np.frombuffer(emb_bytes, dtype=np.float32)
-            chunk_norm = np.linalg.norm(chunk_vec)
-            if chunk_norm == 0:
-                continue
-            chunk_vec = chunk_vec / chunk_norm
+            raw_metadata = row.get("metadata", "{}")
+            try:
+                metadata = json.loads(raw_metadata) if raw_metadata else {}
+            except Exception:
+                metadata = {}
 
-            similarity = float(np.dot(query_vec, chunk_vec))
+            results.append(
+                SearchResult(
+                    chunk_id=row["chunk_id"],
+                    document_id=row["document_id"],
+                    content=row["content"],
+                    score=score_by_vector_id.get(vector_id, 0.0),
+                    document_title=row.get("document_title", ""),
+                    section_title=row.get("section_title", ""),
+                    page_number=row.get("page_number"),
+                    chunk_index=row.get("chunk_index", 0),
+                    metadata=metadata,
+                )
+            )
+            if len(results) >= top_k:
+                break
 
-            results.append(SearchResult(
-                chunk_id=row_dict["id"],
-                document_id=row_dict["document_id"],
-                content=row_dict["content"],
-                score=similarity,
-                document_title=row_dict["document_title"],
-                section_title=row_dict["section_title"],
-                page_number=row_dict["page_number"],
-                chunk_index=row_dict["chunk_index"],
-                metadata=json.loads(row_dict.get("metadata", "{}")),
-            ))
-
-        # Sort by score descending
-        results.sort(key=lambda r: r.score, reverse=True)
-        return results[:top_k]
+        return results
 
     async def get_chunk_count(self, workspace_id: str = "default") -> int:
         """Get total chunk count for a workspace."""
@@ -326,11 +568,18 @@ class VectorStore:
         finally:
             await db.close()
 
+    async def get_backend_info(self) -> dict:
+        """Return vector backend details for diagnostics/UI."""
+        return {
+            "backend": "faiss",
+            "index_dir": str(self.index_dir),
+            "available": faiss is not None,
+        }
+
     # ── Workspace Management ────────────────────────────────
 
     async def create_workspace(self, workspace_id: str, name: str, description: str = ""):
         """Create a new workspace."""
-        from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
         db = await self._get_db()
         try:

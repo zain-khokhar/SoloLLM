@@ -16,6 +16,24 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## API Architecture (Recommended)
+
+- Standard API calls use Next proxy path `/api/*`.
+- Large document uploads use direct backend URL to avoid proxy body buffering limits.
+
+Environment variables:
+
+```bash
+# Optional: base for normal API calls (defaults to /api)
+NEXT_PUBLIC_API_BASE_URL=/api
+
+# Optional: direct backend for large uploads
+# Defaults to http://localhost:8000/api in development
+NEXT_PUBLIC_UPLOAD_API_BASE_URL=http://localhost:8000/api
+```
+
+If you change `next.config.ts`, restart the Next dev server.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

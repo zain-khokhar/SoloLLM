@@ -1,5 +1,7 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,10 +16,75 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Multipart parser can produce extremely verbose per-chunk debug logs on file upload.
+logging.getLogger("python_multipart").setLevel(logging.INFO)
+logging.getLogger("python_multipart.multipart").setLevel(logging.INFO)
+
+
+@dataclass
+class _WarmupResult:
+    content: str
+    score: float = 0.0
+    section_title: str = ""
+
+
+async def _run_cold_start_warmup():
+    """Preload expensive RAG pieces so first user request stays responsive."""
+    if settings.cold_start_warmup_delay_seconds > 0:
+        await asyncio.sleep(settings.cold_start_warmup_delay_seconds)
+
+    logger.info("Cold-start warmup: started")
+
+    # 1) Warm embedding model (can trigger initial model load/cache)
+    try:
+        from rag.embeddings import embedding_engine
+        await asyncio.to_thread(embedding_engine.embed_query, settings.cold_start_warmup_query)
+        logger.info("Cold-start warmup: embedding engine ready")
+    except Exception as e:
+        logger.warning(f"Cold-start warmup embedding skipped: {e}")
+
+    # 2) Warm reranker path (cross-encoder if enabled, heuristic otherwise)
+    try:
+        from rag.reranker import reranker
+        warmup_results = [_WarmupResult(content="warmup context")]
+        await asyncio.to_thread(
+            reranker.rerank,
+            settings.cold_start_warmup_query,
+            warmup_results,
+            1,
+        )
+        logger.info("Cold-start warmup: reranker path ready")
+    except Exception as e:
+        logger.warning(f"Cold-start warmup reranker skipped: {e}")
+
+    # 3) Optional lightweight RAG probe if documents exist
+    if settings.cold_start_warmup_run_rag_probe:
+        try:
+            from rag.vectorstore import vector_store
+            from rag.pipeline import rag_pipeline
+
+            docs = await vector_store.list_documents("default")
+            if docs:
+                await rag_pipeline.query(
+                    query=settings.cold_start_warmup_query,
+                    workspace_id="default",
+                    top_k=1,
+                    rerank=False,
+                )
+                logger.info("Cold-start warmup: RAG probe complete")
+            else:
+                logger.info("Cold-start warmup: no documents, skipping RAG probe")
+        except Exception as e:
+            logger.warning(f"Cold-start warmup RAG probe skipped: {e}")
+
+    logger.info("Cold-start warmup: finished")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
+    warmup_task: asyncio.Task | None = None
+
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     await init_db()
     logger.info("Database initialized")
@@ -69,6 +136,12 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Knowledge graph init skipped: {e}")
 
     logger.info(f"Phase 3 — Context Distillation: {'enabled' if settings.distillation_enabled else 'disabled'}")
+    logger.info(
+        "Reranker: %s (model=%s, local_only=%s)",
+        "cross-encoder" if settings.reranker_enabled else "heuristic",
+        settings.reranker_model_name,
+        settings.reranker_local_files_only,
+    )
     logger.info(f"Phase 4 — Knowledge Graph: {'enabled' if settings.knowledge_graph_enabled else 'disabled'}")
     logger.info(f"Phase 5 — Agent Framework: {'enabled' if settings.agent_enabled else 'disabled'}")
     logger.info("Phase 6 — OpenAI-compat API, Export/Import, Dashboard: enabled")
@@ -82,6 +155,14 @@ async def lifespan(app: FastAPI):
             logger.info(f"[MaxPower] ✓ Model '{settings.default_model}' is on GPU — max power active")
         except Exception as e:
             logger.warning(f"[MaxPower] Warm failed (non-fatal): {e}")
+
+    # Warm expensive components in the background so first chat is fast.
+    if settings.cold_start_warmup_enabled:
+        warmup_task = asyncio.create_task(_run_cold_start_warmup())
+        logger.info(
+            "Cold-start warmup scheduled (delay=%.1fs)",
+            settings.cold_start_warmup_delay_seconds,
+        )
 
     yield
 
@@ -100,6 +181,13 @@ async def lifespan(app: FastAPI):
             await max_power_runner.shutdown()
         except Exception as e:
             logger.warning(f"[MaxPower] Shutdown error: {e}")
+
+    if warmup_task and not warmup_task.done():
+        warmup_task.cancel()
+        try:
+            await warmup_task
+        except asyncio.CancelledError:
+            pass
 
     logger.info("Shutting down")
 

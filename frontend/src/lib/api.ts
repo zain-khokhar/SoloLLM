@@ -32,7 +32,13 @@ import {
   TrainingDataPreview,
 } from "@/types";
 
-const API_BASE = "/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
+
+// Large multipart uploads are sent directly to backend to avoid Next proxy buffering limits.
+const UPLOAD_API_BASE =
+  process.env.NEXT_PUBLIC_UPLOAD_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://localhost:8000/api";
 
 // ── REST helpers ───────────────────────────────────────────
 
@@ -320,6 +326,7 @@ export function streamChat(
     system_prompt?: string;
     temperature?: number;
     max_tokens?: number;
+    documents_only?: boolean;
   },
   callbacks: ChatStreamCallbacks
 ): AbortController {
@@ -454,6 +461,100 @@ export function streamContinuation(
                   break;
                 case "error":
                   callbacks.onError(data.error);
+                  break;
+              }
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError(err.message);
+      }
+    });
+
+  return controller;
+}
+
+// ── Web Search Streaming ──────────────────────────────────────
+
+export interface WebSearchCallbacks {
+  onStatus: (phase: string, message: string) => void;
+  onSources: (results: { title: string; snippet: string; url: string }[]) => void;
+  onToken: (content: string) => void;
+  onDone: (data: { message_id: string; conversation_id: string; thread_id: string | null }) => void;
+  onError: (error: string) => void;
+}
+
+export function streamWebSearch(
+  params: {
+    query: string;
+    model?: string;
+    conversation_id?: string;
+    thread_id?: string;
+    num_results?: number;
+  },
+  callbacks: WebSearchCallbacks
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}/chat/web-search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        callbacks.onError(err.detail || `Request failed: ${res.status}`);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        callbacks.onError("No response body");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr);
+              switch (eventType) {
+                case "status":
+                  callbacks.onStatus(data.phase, data.message);
+                  break;
+                case "sources":
+                  callbacks.onSources(data.results);
+                  break;
+                case "token":
+                  callbacks.onToken(data.content);
+                  break;
+                case "done":
+                  callbacks.onDone(data);
+                  break;
+                case "error":
+                  callbacks.onError(data.content || data.error || "Unknown error");
                   break;
               }
             } catch {
@@ -964,7 +1065,7 @@ export async function uploadDocument(
   const formData = new FormData();
   formData.append("file", file);
   formData.append("workspace_id", workspaceId);
-  const res = await fetch(`${API_BASE}/documents/upload`, {
+  const res = await fetch(`${UPLOAD_API_BASE}/documents/upload`, {
     method: "POST",
     body: formData,
   });

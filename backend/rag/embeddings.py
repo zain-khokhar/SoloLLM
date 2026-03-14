@@ -7,7 +7,8 @@ Falls back to a TF-IDF based approach if sentence-transformers is not installed.
 
 import logging
 import numpy as np
-from typing import Optional
+
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -140,4 +141,7 @@ class EmbeddingEngine:
 
 
 # Singleton instance
-embedding_engine = EmbeddingEngine()
+embedding_engine = EmbeddingEngine(
+    model_name=settings.embedding_model_name,
+    dimension=settings.embedding_dimension,
+)

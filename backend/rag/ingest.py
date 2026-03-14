@@ -264,58 +264,70 @@ def parse_pdf(file_path: str) -> ParsedDocument:
         )
 
     try:
-        doc = fitz.open(file_path)
         sections = []
         all_text = []
         tables = []
+        page_count = 0
 
-        metadata = {}
-        if doc.metadata:
-            metadata = {
-                "author": doc.metadata.get("author", ""),
-                "title": doc.metadata.get("title", ""),
-                "subject": doc.metadata.get("subject", ""),
-                "creator": doc.metadata.get("creator", ""),
-                "page_count": len(doc),
-            }
+        with fitz.open(file_path) as doc:
+            page_count = len(doc)
 
-        title = metadata.get("title") or Path(filename).stem
+            metadata = {}
+            if doc.metadata:
+                metadata = {
+                    "author": doc.metadata.get("author", ""),
+                    "title": doc.metadata.get("title", ""),
+                    "subject": doc.metadata.get("subject", ""),
+                    "creator": doc.metadata.get("creator", ""),
+                    "page_count": page_count,
+                }
 
-        for page_num, page in enumerate(doc, 1):
-            page_text = page.get_text("text")
-            if page_text.strip():
-                all_text.append(page_text)
+            title = metadata.get("title") or Path(filename).stem
 
-                # Detect sections by looking for bold/large text patterns
-                blocks = page.get_text("dict")["blocks"]
-                for block in blocks:
-                    if block.get("type") == 0:  # text block
-                        for line in block.get("lines", []):
-                            line_text = ""
-                            max_size = 0
-                            is_bold = False
-                            for span in line.get("spans", []):
-                                line_text += span.get("text", "")
-                                size = span.get("size", 12)
-                                if size > max_size:
-                                    max_size = size
-                                if "bold" in span.get("font", "").lower():
-                                    is_bold = True
+            pdf_plumber_doc = None
+            try:
+                import pdfplumber
+                pdf_plumber_doc = pdfplumber.open(file_path)
+            except ImportError:
+                pdf_plumber_doc = None
+            except Exception:
+                pdf_plumber_doc = None
 
-                            line_text = line_text.strip()
-                            # Detect headings (large or bold text, short lines)
-                            if line_text and max_size > 14 and len(line_text) < 200:
-                                level = 1 if max_size > 20 else (2 if max_size > 16 else 3)
-                                sections.append(DocumentSection(
-                                    title=line_text,
-                                    content="",
-                                    level=level,
-                                    page_number=page_num,
-                                    section_index=len(sections),
-                                ))
+            for page_num, page in enumerate(doc, 1):
+                page_text = page.get_text("text")
+                if page_text.strip():
+                    all_text.append(page_text)
 
-                # If no structural sections found, create page-based section
-                if not any(s.page_number == page_num for s in sections):
+                    # Detect sections by looking for bold/large text patterns
+                    blocks = page.get_text("dict")["blocks"]
+                    for block in blocks:
+                        if block.get("type") == 0:  # text block
+                            for line in block.get("lines", []):
+                                line_text = ""
+                                max_size = 0
+                                is_bold = False
+                                for span in line.get("spans", []):
+                                    line_text += span.get("text", "")
+                                    size = span.get("size", 12)
+                                    if size > max_size:
+                                        max_size = size
+                                    if "bold" in span.get("font", "").lower():
+                                        is_bold = True
+
+                                line_text = line_text.strip()
+                                # Detect headings (large or bold text, short lines)
+                                if line_text and (max_size > 14 or is_bold) and len(line_text) < 200:
+                                    level = 1 if max_size > 20 else (2 if max_size > 16 else 3)
+                                    sections.append(DocumentSection(
+                                        title=line_text,
+                                        content="",
+                                        level=level,
+                                        page_number=page_num,
+                                        section_index=len(sections),
+                                    ))
+
+                    # Always add a stable page-based section with content.
+                    # Heading-only sections can be sparse and cause poor downstream chunking.
                     sections.append(DocumentSection(
                         title=f"Page {page_num}",
                         content=page_text.strip(),
@@ -324,50 +336,35 @@ def parse_pdf(file_path: str) -> ParsedDocument:
                         section_index=len(sections),
                     ))
 
-            # Try to extract tables using pdfplumber if available
-            try:
-                import pdfplumber
-                with pdfplumber.open(file_path) as pdf_plumber:
-                    if page_num <= len(pdf_plumber.pages):
-                        p = pdf_plumber.pages[page_num - 1]
-                        page_tables = p.extract_tables()
-                        for table in page_tables:
-                            if table and len(table) > 1:
-                                headers = [str(c or "") for c in table[0]]
-                                rows = [[str(c or "") for c in row] for row in table[1:]]
-                                tables.append({
-                                    "headers": headers,
-                                    "rows": rows,
-                                    "page": page_num,
-                                    "source": filename,
-                                })
-            except ImportError:
-                pass
-            except Exception:
-                pass
+                # Try to extract tables using pdfplumber if available
+                if pdf_plumber_doc is not None:
+                    try:
+                        if page_num <= len(pdf_plumber_doc.pages):
+                            p = pdf_plumber_doc.pages[page_num - 1]
+                            page_tables = p.extract_tables()
+                            for table in page_tables:
+                                if table and len(table) > 1:
+                                    headers = [str(c or "") for c in table[0]]
+                                    rows = [[str(c or "") for c in row] for row in table[1:]]
+                                    tables.append({
+                                        "headers": headers,
+                                        "rows": rows,
+                                        "page": page_num,
+                                        "source": filename,
+                                    })
+                    except Exception:
+                        pass
+
+            if pdf_plumber_doc is not None:
+                try:
+                    pdf_plumber_doc.close()
+                except Exception:
+                    pass
 
         full_text = "\n\n".join(all_text)
 
-        # Assign content to sections
-        if sections:
-            text_lines = full_text.split("\n")
-            for i, section in enumerate(sections):
-                if not section.content:
-                    # Find the section content between this heading and the next
-                    start_found = False
-                    section_lines = []
-                    for line in text_lines:
-                        if section.title in line:
-                            start_found = True
-                            continue
-                        if start_found:
-                            # Check if we've hit the next section
-                            if i + 1 < len(sections) and sections[i + 1].title in line:
-                                break
-                            section_lines.append(line)
-                    section.content = "\n".join(section_lines).strip()
-
-        doc.close()
+        # Keep only sections that have real content to avoid empty/duplicate structural noise.
+        sections = [s for s in sections if s.content and s.content.strip()]
 
         return ParsedDocument(
             filename=filename,
@@ -376,7 +373,7 @@ def parse_pdf(file_path: str) -> ParsedDocument:
             content=full_text,
             sections=sections,
             metadata=metadata,
-            page_count=len(doc) if hasattr(doc, '__len__') else metadata.get("page_count", 0),
+            page_count=page_count or metadata.get("page_count", 0),
             tables=tables,
         )
 

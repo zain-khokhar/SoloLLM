@@ -13,6 +13,7 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     workspace_id: Optional[str] = "default"
+    documents_only: Optional[bool] = False
 
 
 class ContinueRequest(BaseModel):

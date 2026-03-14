@@ -1,16 +1,19 @@
 "use client";
 
 import { useState, useRef, KeyboardEvent } from "react";
-import { Send, Square, Paperclip, Loader2 } from "lucide-react";
+import { Send, Square, Paperclip, Loader2, Globe, FileText } from "lucide-react";
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, options?: { documentsOnly?: boolean }) => void;
   onStop: () => void;
   isGenerating: boolean;
   disabled?: boolean;
   onUploadDocument?: (file: File) => void;
   isUploading?: boolean;
   contextLimit?: number | null;
+  onWebSearch?: (query: string) => void;
+  isSearching?: boolean;
+  documentsAttached?: boolean;
 }
 
 export default function ChatInput({
@@ -21,16 +24,20 @@ export default function ChatInput({
   onUploadDocument,
   isUploading,
   contextLimit,
+  onWebSearch,
+  isSearching,
+  documentsAttached,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
+  const [documentsOnlyMode, setDocumentsOnlyMode] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSend = () => {
     const trimmed = input.trim();
     if (!trimmed || disabled) return;
-    onSend(trimmed);
+    onSend(trimmed, { documentsOnly: documentsOnlyMode });
     setInput("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -40,7 +47,7 @@ export default function ChatInput({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (isGenerating) return;
+      if (isGenerating || isSearching) return;
       handleSend();
     }
   };
@@ -75,6 +82,18 @@ export default function ChatInput({
     if (file && onUploadDocument) onUploadDocument(file);
   };
 
+  const handleWebSearch = () => {
+    const trimmed = input.trim();
+    if (!trimmed || disabled || isSearching) return;
+    onWebSearch?.(trimmed);
+    setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  };
+
+  const isBusy = isGenerating || isSearching;
+
   return (
     <div className="px-4 pb-4 pt-2">
       <div className="max-w-3xl mx-auto">
@@ -106,26 +125,30 @@ export default function ChatInput({
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading || disabled}
-              className="p-2 rounded-xl transition-smooth disabled:opacity-30"
+              className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl transition-smooth disabled:opacity-30 text-xs font-medium"
               style={{
                 color: isUploading ? "var(--accent)" : "var(--text-muted)",
-                background: "transparent",
+                background: "var(--bg-tertiary)",
+                border: "1px solid var(--border-color)",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.color = "var(--accent)";
                 e.currentTarget.style.background = "var(--accent-muted)";
+                e.currentTarget.style.border = "1px solid rgba(99, 102, 241, 0.35)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.color = isUploading ? "var(--accent)" : "var(--text-muted)";
-                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.background = "var(--bg-tertiary)";
+                e.currentTarget.style.border = "1px solid var(--border-color)";
               }}
-              title="Attach document to thread"
+              title="Upload file"
             >
               {isUploading ? (
                 <Loader2 size={16} className="animate-spin" />
               ) : (
                 <Paperclip size={16} />
               )}
+              <span className="hidden sm:inline">Upload</span>
             </button>
           )}
 
@@ -134,7 +157,13 @@ export default function ChatInput({
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={isDragOver ? "Drop file to upload..." : "Message SoloLLM..."}
+            placeholder={
+              isDragOver
+                ? "Drop file to upload..."
+                : documentsOnlyMode
+                  ? "Message SoloLLM... (Docs Only mode ON)"
+                  : "Message SoloLLM... (use Upload or Web)"
+            }
             rows={1}
             className="flex-1 bg-transparent resize-none outline-none text-sm leading-relaxed"
             style={{
@@ -146,7 +175,76 @@ export default function ChatInput({
           />
 
           <div className="flex items-center gap-1.5">
-            {isGenerating ? (
+            <button
+              onClick={() => setDocumentsOnlyMode((prev) => !prev)}
+              disabled={disabled || !documentsAttached}
+              className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl transition-smooth disabled:opacity-30 text-xs font-medium"
+              style={{
+                background: documentsOnlyMode ? "var(--accent-muted)" : "var(--bg-tertiary)",
+                color: documentsOnlyMode ? "var(--accent)" : "var(--text-muted)",
+                border: documentsOnlyMode
+                  ? "1px solid rgba(99, 102, 241, 0.35)"
+                  : "1px solid var(--border-color)",
+              }}
+              title={documentsAttached ? "Answer using only attached thread documents" : "Attach a document to enable Docs Only mode"}
+            >
+              <FileText size={14} />
+              <span className="hidden sm:inline">Docs</span>
+            </button>
+
+            {/* Web Search button */}
+            {onWebSearch && (
+              <button
+                onClick={handleWebSearch}
+                disabled={!input.trim() || disabled || isBusy || documentsOnlyMode}
+                className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl transition-smooth disabled:opacity-20 text-xs font-medium"
+                style={{
+                  background: isSearching
+                    ? "rgba(59, 130, 246, 0.15)"
+                    : input.trim()
+                      ? "rgba(59, 130, 246, 0.1)"
+                      : "var(--bg-tertiary)",
+                  color: isSearching
+                    ? "rgb(96, 165, 250)"
+                    : input.trim()
+                      ? "rgb(96, 165, 250)"
+                      : "var(--text-muted)",
+                  border: isSearching
+                    ? "1px solid rgba(59, 130, 246, 0.3)"
+                    : input.trim()
+                      ? "1px solid rgba(59, 130, 246, 0.25)"
+                      : "1px solid var(--border-color)",
+                }}
+                onMouseEnter={(e) => {
+                  if (input.trim() && !isBusy) {
+                    e.currentTarget.style.background = "rgba(59, 130, 246, 0.2)";
+                    e.currentTarget.style.border = "1px solid rgba(59, 130, 246, 0.4)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = isSearching
+                    ? "rgba(59, 130, 246, 0.15)"
+                    : input.trim()
+                      ? "rgba(59, 130, 246, 0.1)"
+                      : "var(--bg-tertiary)";
+                  e.currentTarget.style.border = isSearching
+                    ? "1px solid rgba(59, 130, 246, 0.3)"
+                    : input.trim()
+                      ? "1px solid rgba(59, 130, 246, 0.25)"
+                      : "1px solid var(--border-color)";
+                }}
+                title="Web search"
+              >
+                {isSearching ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Globe size={14} />
+                )}
+                <span className="hidden sm:inline">Web</span>
+              </button>
+            )}
+
+            {isBusy ? (
               <button
                 onClick={onStop}
                 className="p-2.5 rounded-xl transition-smooth"

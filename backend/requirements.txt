@@ -9,6 +9,9 @@ GPUtil==1.4.0
 pydantic==2.10.4
 pydantic-settings==2.7.1
 python-multipart==0.0.20
+numpy==2.2.1
+faiss-cpu==1.10.0
+sentence-transformers==3.4.1
 # Phase 4 — Knowledge Graph & Web Scraping
 networkx==3.4.2
 beautifulsoup4==4.13.3

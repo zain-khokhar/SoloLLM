@@ -14,7 +14,7 @@ import ExportImportView from "@/components/export/ExportImportView";
 import SetupWizard from "@/components/setup/SetupWizard";
 import ModelPicker from "@/components/setup/ModelPicker";
 import TrainingView from "@/components/training/TrainingView";
-import { streamChat, streamContinuation, getConversation, getThread, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels, uploadDocument, attachDocumentToThread, getThreadDocuments, listDocuments, detachDocumentFromThread } from "@/lib/api";
+import { streamChat, streamContinuation, streamWebSearch, getConversation, getThread, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels, uploadDocument, attachDocumentToThread, getThreadDocuments, listDocuments, detachDocumentFromThread } from "@/lib/api";
 import { DistillationMeta, Thread, DocumentInfo } from "@/types";
 import {
   ArrowLeft,
@@ -62,6 +62,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [distillationMeta, setDistillationMeta] = useState<DistillationMeta | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [threadDocuments, setThreadDocuments] = useState<{ document_id: string; title?: string }[]>([]);
   const [contextLimit, setContextLimit] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -75,6 +76,15 @@ export default function Home() {
           // Ollama is running, check if any models installed
           const models = await listModels().catch(() => []);
           setShowSetup(models.length === 0);
+          if (models.length > 0) {
+            setSelectedModel((prev) => {
+              // If the current default isn't installed, pick the first available
+              if (!models.some((m: { name: string }) => m.name === prev)) {
+                return models[0].name;
+              }
+              return prev;
+            });
+          }
         } else {
           // Ollama not connected — show setup
           setShowSetup(true);
@@ -96,6 +106,7 @@ export default function Home() {
     setMessages([]);
     setStreamingContent("");
     setIsStreaming(false);
+    setIsSearching(false);
     setTruncation(null);
     setError(null);
     setDistillationMeta(null);
@@ -167,7 +178,7 @@ export default function Home() {
   }, [conversationId]);
 
   const handleSend = useCallback(
-    (message: string) => {
+    (message: string, options?: { documentsOnly?: boolean }) => {
       setError(null);
       setTruncation(null);
       setDistillationMeta(null);
@@ -189,6 +200,7 @@ export default function Home() {
           conversation_id: conversationId || undefined,
           thread_id: activeThreadId || undefined,
           model: selectedModel,
+          documents_only: options?.documentsOnly ?? false,
         },
         {
           onToken: (content) => {
@@ -251,6 +263,7 @@ export default function Home() {
     if (abortRef.current) {
       abortRef.current.abort();
       setIsStreaming(false);
+      setIsSearching(false);
       if (streamingContent) {
         setMessages((prev) => [
           ...prev,
@@ -372,6 +385,70 @@ export default function Home() {
       // ignore
     }
   }, [activeThreadId]);
+
+  const handleWebSearch = useCallback(
+    (query: string) => {
+      setError(null);
+      setTruncation(null);
+      setDistillationMeta(null);
+
+      // Show user message immediately
+      const userMsg: ChatMessage = {
+        id: `temp-search-${Date.now()}`,
+        role: "user",
+        content: `[Web Search] ${query}`,
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setIsSearching(true);
+      setStreamingContent("");
+
+      let accumulated = "";
+
+      const controller = streamWebSearch(
+        {
+          query,
+          model: selectedModel,
+          conversation_id: conversationId || undefined,
+          thread_id: activeThreadId || undefined,
+        },
+        {
+          onStatus: (_phase, _message) => {
+            // Could show status in the streaming area
+          },
+          onSources: (_results) => {
+            // Sources received — could display them later
+          },
+          onToken: (content) => {
+            accumulated += content;
+            setStreamingContent(accumulated);
+          },
+          onDone: (data) => {
+            setIsSearching(false);
+            setConversationId(data.conversation_id);
+            if (data.thread_id) setActiveThreadId(data.thread_id);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: data.message_id || `search-${Date.now()}`,
+                role: "assistant",
+                content: accumulated,
+              },
+            ]);
+            setStreamingContent("");
+            setRefreshSidebar((prev) => prev + 1);
+          },
+          onError: (err) => {
+            setIsSearching(false);
+            setStreamingContent("");
+            setError(err);
+          },
+        }
+      );
+
+      abortRef.current = controller;
+    },
+    [conversationId, activeThreadId, selectedModel]
+  );
 
   return (
     <div className="flex h-screen">
@@ -507,7 +584,7 @@ export default function Home() {
 
           <ChatArea
             messages={messages}
-            isStreaming={isStreaming}
+            isStreaming={isStreaming || isSearching}
             streamingContent={streamingContent}
             truncation={truncation}
             onContinue={handleContinue}
@@ -559,6 +636,9 @@ export default function Home() {
             onUploadDocument={handleUploadDocument}
             isUploading={isUploading}
             contextLimit={contextLimit}
+            onWebSearch={handleWebSearch}
+            isSearching={isSearching}
+            documentsAttached={threadDocuments.length > 0}
           />
 
           {/* Thread Settings Slide-over Panel */}

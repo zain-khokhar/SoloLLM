@@ -10,27 +10,46 @@ import logging
 import re
 from dataclasses import dataclass
 
+from core.config import settings
+
 logger = logging.getLogger(__name__)
 
 _cross_encoder = None
+_cross_encoder_failed = False
 
 
 def _load_cross_encoder(model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
     """Lazily load the cross-encoder model."""
-    global _cross_encoder
+    global _cross_encoder, _cross_encoder_failed
+
+    if not settings.reranker_enabled:
+        return None
+
     if _cross_encoder is not None:
         return _cross_encoder
+    if _cross_encoder_failed:
+        return None
 
     try:
         from sentence_transformers import CrossEncoder
         logger.info(f"Loading cross-encoder: {model_name}")
-        _cross_encoder = CrossEncoder(model_name)
+
+        cross_encoder_kwargs = {}
+        if settings.reranker_local_files_only:
+            cross_encoder_kwargs = {
+                "automodel_args": {"local_files_only": True},
+                "tokenizer_args": {"local_files_only": True},
+            }
+
+        _cross_encoder = CrossEncoder(model_name, **cross_encoder_kwargs)
         logger.info(f"Cross-encoder loaded: {model_name}")
         return _cross_encoder
     except ImportError:
+        _cross_encoder_failed = True
         logger.warning("sentence-transformers not installed. Using heuristic reranker.")
         return None
     except Exception as e:
+        _cross_encoder_failed = True
         logger.error(f"Failed to load cross-encoder: {e}")
         return None
 
@@ -45,7 +64,7 @@ class Reranker:
     """
 
     def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
-        self.model_name = model_name
+        self.model_name = settings.reranker_model_name or model_name
 
     def rerank(
         self,

@@ -106,11 +106,16 @@ export default function AgentView({
     return () => clearInterval(interval);
   }, [isRunning, runStartTime]);
 
-  // Load models
+  // Load models and auto-select first available if current selection is missing
   useEffect(() => {
     listModels()
-      .then((m) => setModels(m))
-      .catch(() => {});
+      .then((m) => {
+        setModels(m);
+        if (m.length > 0 && !m.some((mod) => mod.name === selectedAgentModel)) {
+          setSelectedAgentModel(m[0].name);
+        }
+      })
+      .catch(() => { });
   }, []);
 
   // Sync selectedModel prop
@@ -407,11 +412,10 @@ export default function AgentView({
                   activeTab === tab.key
                     ? "white"
                     : "var(--text-secondary)",
-                border: `1px solid ${
-                  activeTab === tab.key
+                border: `1px solid ${activeTab === tab.key
                     ? "var(--accent)"
                     : "var(--border-color)"
-                }`,
+                  }`,
               }}
             >
               {tab.icon}
@@ -652,9 +656,8 @@ function AgentTab({
                     ? "var(--accent)"
                     : "var(--bg-secondary)",
                   color: query.trim() ? "white" : "var(--text-muted)",
-                  border: `1px solid ${
-                    query.trim() ? "var(--accent)" : "var(--border-color)"
-                  }`,
+                  border: `1px solid ${query.trim() ? "var(--accent)" : "var(--border-color)"
+                    }`,
                   opacity: query.trim() ? 1 : 0.5,
                 }}
               >

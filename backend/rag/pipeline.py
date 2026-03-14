@@ -25,6 +25,7 @@ from rag.keyword_index import keyword_index
 from rag.retriever import hybrid_retriever, RetrievalResult
 from rag.reranker import reranker
 from rag.citations import citation_tracker, CitedContext
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,16 @@ class RAGPipeline:
             document_title=parsed.title,
         )
 
+        max_chunks = max(100, int(getattr(settings, "rag_max_chunks_per_document", 8000)))
+        if len(chunks) > max_chunks:
+            logger.warning(
+                "Chunk cap applied for '%s': %d -> %d",
+                parsed.filename,
+                len(chunks),
+                max_chunks,
+            )
+            chunks = chunks[:max_chunks]
+
         if not chunks:
             return {
                 "success": False,
@@ -95,9 +106,36 @@ class RAGPipeline:
                 "filename": parsed.filename,
             }
 
-        # Step 3: Generate embeddings
+        # Step 3: Generate embeddings in batches with progress logs
         chunk_texts = [c.content for c in chunks]
-        embeddings = embedding_engine.embed_documents(chunk_texts)
+        batch_size = max(8, int(getattr(settings, "rag_embedding_batch_size", 128)))
+        embeddings: list[list[float]] = []
+        total_batches = (len(chunk_texts) + batch_size - 1) // batch_size
+        logger.info(
+            "Embedding '%s': %d chunks in %d batches (batch_size=%d, fallback=%s)",
+            parsed.filename,
+            len(chunk_texts),
+            total_batches,
+            batch_size,
+            embedding_engine.is_fallback,
+        )
+
+        for batch_idx in range(total_batches):
+            start = batch_idx * batch_size
+            end = min(start + batch_size, len(chunk_texts))
+            batch = chunk_texts[start:end]
+            batch_embeddings = embedding_engine.embed_documents(batch)
+            embeddings.extend(batch_embeddings)
+
+            if (batch_idx + 1) % 10 == 0 or (batch_idx + 1) == total_batches:
+                logger.info(
+                    "Embedding progress '%s': batch %d/%d (%d/%d chunks)",
+                    parsed.filename,
+                    batch_idx + 1,
+                    total_batches,
+                    end,
+                    len(chunk_texts),
+                )
 
         # Step 4: Prepare chunk dicts for storage
         chunk_dicts = []
@@ -116,6 +154,7 @@ class RAGPipeline:
             })
 
         # Step 5: Store in vector DB + keyword index
+        logger.info("Indexing '%s': writing %d chunks to stores", parsed.filename, len(chunk_dicts))
         await vector_store.add_document(
             document_id=document_id,
             filename=parsed.filename,
@@ -183,6 +222,7 @@ class RAGPipeline:
         workspace_id: str = "default",
         top_k: int = 5,
         document_id: str | None = None,
+        document_ids: list[str] | None = None,
         rerank: bool = True,
     ) -> CitedContext:
         """
@@ -196,6 +236,7 @@ class RAGPipeline:
             workspace_id=workspace_id,
             top_k=top_k * 3,  # Over-fetch for reranking
             document_id=document_id,
+            document_ids=document_ids,
         )
 
         if not results:
@@ -344,11 +385,13 @@ class RAGPipeline:
         """Get stats for a workspace."""
         docs = await vector_store.list_documents(workspace_id)
         chunk_count = await vector_store.get_chunk_count(workspace_id)
+        backend_info = await vector_store.get_backend_info()
         return {
             "workspace_id": workspace_id,
             "document_count": len(docs),
             "chunk_count": chunk_count,
             "embedding_info": embedding_engine.get_info(),
+            "vector_backend": backend_info,
         }
 
 

@@ -139,7 +139,21 @@ async def run_agent(request: AgentRunRequest):
 async def run_agent_stream(request: AgentRunRequest):
     """Run the agent with streaming SSE events."""
     from core.config import settings
+    import httpx
+
     model = request.model or settings.default_model
+
+    # Verify model exists in Ollama before starting the agent run
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:
+            resp = await client.get(f"{settings.ollama_base_url}/api/tags")
+            if resp.status_code == 200:
+                available = [m["name"] for m in resp.json().get("models", [])]
+                if model not in available and available:
+                    # Requested model not found — fall back to first available
+                    model = available[0]
+    except Exception:
+        pass  # If we can't check, proceed and let the agent report the error
 
     async def event_generator():
         steps_collected = []

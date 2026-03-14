@@ -63,6 +63,24 @@ class Settings(BaseSettings):
     web_scrape_timeout: int = 30
     max_scrape_content_mb: int = 5
 
+    # RAG ingestion guardrails
+    rag_max_chunks_per_document: int = 8000
+    rag_embedding_batch_size: int = 128
+    embedding_model_name: str = "all-MiniLM-L6-v2"
+    embedding_dimension: int = 384
+    vector_index_backend: str = "faiss"
+
+    # RAG reranker controls (avoid long first-request model downloads by default)
+    reranker_enabled: bool = False
+    reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    reranker_local_files_only: bool = True
+
+    # Cold-start warmup
+    cold_start_warmup_enabled: bool = True
+    cold_start_warmup_delay_seconds: float = 1.5
+    cold_start_warmup_query: str = "warmup"
+    cold_start_warmup_run_rag_probe: bool = True
+
     # Phase 5 — Agent Framework
     agent_enabled: bool = True
     agent_max_steps: int = 10

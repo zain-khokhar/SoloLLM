@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: { 
+    // Allow larger proxied request bodies in dev/proxy mode.
+    // Large file uploads should still prefer direct backend upload.
+    proxyClientMaxBodySize: "100mb",
+  },
   async rewrites() {
     return [
       {
