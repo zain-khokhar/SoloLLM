@@ -6,6 +6,7 @@ export interface Message {
   token_count: number;
   is_continuation: boolean;
   continuation_of: string | null;
+  documents_used?: string[];
   created_at: string;
 }
 
@@ -97,6 +98,7 @@ export interface DistillationMeta {
     document_title: string;
     section_title: string;
     page_number: number | null;
+    document_id?: string;
   }[];
 }
 
@@ -424,6 +426,9 @@ export interface TrainingStatus {
   current_step: number;
   total_steps: number;
   loss: number;
+  val_loss?: number;
+  best_val_loss?: number;
+  quality_passed?: boolean;
   epoch: number;
   message: string;
   error: string | null;
@@ -431,11 +436,22 @@ export interface TrainingStatus {
 
 export interface TrainingDataPreview {
   total_examples: number;
+  source_mode?: "conversation" | "documents" | "mixed";
+  documents_used?: string[];
+  sequence?: Array<{
+    index: number;
+    source_type: "conversation" | "document";
+    source_name: string;
+    document_ids: string[];
+  }>;
   preview: Array<{
     instruction: string;
     input: string;
     output: string;
     conversation_id: string;
+    source_type?: "conversation" | "document";
+    source_name?: string;
+    document_ids?: string[];
   }>;
   conversations_used: number;
 }

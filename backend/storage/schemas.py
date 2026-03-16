@@ -46,6 +46,7 @@ class MessageResponse(BaseModel):
     token_count: int = 0
     is_continuation: bool = False
     continuation_of: Optional[str] = None
+    documents_used: list[str] = []
     created_at: str
 
 

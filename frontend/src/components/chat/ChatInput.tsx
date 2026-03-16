@@ -14,6 +14,9 @@ interface ChatInputProps {
   onWebSearch?: (query: string) => void;
   isSearching?: boolean;
   documentsAttached?: boolean;
+  availableDocuments?: { document_id: string; filename: string }[];
+  selectedDocumentIds?: string[];
+  onToggleDocumentReference?: (documentId: string) => void;
 }
 
 export default function ChatInput({
@@ -27,10 +30,14 @@ export default function ChatInput({
   onWebSearch,
   isSearching,
   documentsAttached,
+  availableDocuments,
+  selectedDocumentIds,
+  onToggleDocumentReference,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const [documentsOnlyMode, setDocumentsOnlyMode] = useState(false);
+  const [showDocsMenu, setShowDocsMenu] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -191,6 +198,54 @@ export default function ChatInput({
               <FileText size={14} />
               <span className="hidden sm:inline">Docs</span>
             </button>
+
+            <div className="relative">
+              <button
+                onClick={() => setShowDocsMenu((prev) => !prev)}
+                disabled={disabled || !availableDocuments || availableDocuments.length === 0}
+                className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl transition-smooth disabled:opacity-30 text-xs font-medium"
+                style={{
+                  background: showDocsMenu ? "var(--accent-muted)" : "var(--bg-tertiary)",
+                  color: showDocsMenu ? "var(--accent)" : "var(--text-muted)",
+                  border: showDocsMenu
+                    ? "1px solid rgba(99, 102, 241, 0.35)"
+                    : "1px solid var(--border-color)",
+                }}
+                title="Select referenced documents"
+              >
+                <FileText size={14} />
+                <span className="hidden sm:inline">Refs</span>
+                <span className="text-[10px]">{selectedDocumentIds?.length || 0}</span>
+              </button>
+              {showDocsMenu && availableDocuments && availableDocuments.length > 0 && (
+                <div
+                  className="absolute bottom-12 right-0 w-72 max-h-56 overflow-y-auto rounded-lg p-2 z-20"
+                  style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    boxShadow: "0 8px 28px rgba(0, 0, 0, 0.35)",
+                  }}
+                >
+                  <div className="text-[10px] px-1 pb-1" style={{ color: "var(--text-muted)" }}>
+                    Referenced documents (thread)
+                  </div>
+                  {availableDocuments.map((doc) => (
+                    <label
+                      key={doc.document_id}
+                      className="flex items-center gap-2 px-1 py-1 rounded text-xs cursor-pointer"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedDocumentIds?.includes(doc.document_id))}
+                        onChange={() => onToggleDocumentReference?.(doc.document_id)}
+                      />
+                      <span className="truncate">{doc.filename}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Web Search button */}
             {onWebSearch && (

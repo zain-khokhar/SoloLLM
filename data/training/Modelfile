@@ -1,0 +1,4 @@
+FROM C:/Users/KLH/Desktop/Solollm/data/training/output
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+SYSTEM "You are a fine-tuned assistant trained with SoloLLM."

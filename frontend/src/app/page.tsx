@@ -63,9 +63,42 @@ export default function Home() {
   const [distillationMeta, setDistillationMeta] = useState<DistillationMeta | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [threadDocuments, setThreadDocuments] = useState<{ document_id: string; title?: string }[]>([]);
+  const [threadDocuments, setThreadDocuments] = useState<{ document_id: string; filename: string }[]>([]);
+  const [allDocuments, setAllDocuments] = useState<DocumentInfo[]>([]);
   const [contextLimit, setContextLimit] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const refreshDocumentCatalog = useCallback(async () => {
+    try {
+      const docs = await listDocuments();
+      setAllDocuments(docs || []);
+      return docs || [];
+    } catch {
+      setAllDocuments([]);
+      return [] as DocumentInfo[];
+    }
+  }, []);
+
+  const refreshThreadDocuments = useCallback(async (threadId: string | null, docsCatalog?: DocumentInfo[]) => {
+    if (!threadId) {
+      setThreadDocuments([]);
+      return;
+    }
+    try {
+      const attached = await getThreadDocuments(threadId);
+      const docs = docsCatalog || allDocuments;
+      const mapped = (attached.documents || []).map((doc) => {
+        const fullDoc = docs.find((d) => d.document_id === doc.document_id);
+        return {
+          document_id: doc.document_id,
+          filename: fullDoc?.filename || doc.document_id,
+        };
+      });
+      setThreadDocuments(mapped);
+    } catch {
+      setThreadDocuments([]);
+    }
+  }, [allDocuments]);
 
   // Check if we need to show the setup wizard
   useEffect(() => {
@@ -338,16 +371,15 @@ export default function Home() {
     abortRef.current = controller;
   }, [truncation]);
 
-  // Load thread documents when active thread changes
+  // Load document catalog on startup
   useEffect(() => {
-    if (!activeThreadId) {
-      setThreadDocuments([]);
-      return;
-    }
-    getThreadDocuments(activeThreadId)
-      .then((data) => setThreadDocuments(data.documents || []))
-      .catch(() => setThreadDocuments([]));
-  }, [activeThreadId]);
+    refreshDocumentCatalog();
+  }, [refreshDocumentCatalog]);
+
+  // Load thread documents when active thread or catalog changes
+  useEffect(() => {
+    void refreshThreadDocuments(activeThreadId);
+  }, [activeThreadId, allDocuments, refreshThreadDocuments]);
 
   const handleUploadDocument = useCallback(async (file: File) => {
     if (!activeThreadId) {
@@ -362,29 +394,39 @@ export default function Home() {
       if (result.success && result.document_id) {
         // Attach to current thread for scoped RAG retrieval
         await attachDocumentToThread(activeThreadId, result.document_id);
-        // Refresh thread documents with filename info
-        const docs = await getThreadDocuments(activeThreadId);
-        const enrichedDocs = (docs.documents || []).map((d: { document_id: string; [key: string]: unknown }) => ({
-          ...d,
-          title: d.document_id === result.document_id ? result.filename : (d as { title?: string }).title,
-        }));
-        setThreadDocuments(enrichedDocs);
+        const docs = await refreshDocumentCatalog();
+        await refreshThreadDocuments(activeThreadId, docs);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Document upload failed");
     }
     setIsUploading(false);
-  }, [activeThreadId]);
+  }, [activeThreadId, refreshDocumentCatalog, refreshThreadDocuments]);
 
   const handleDetachDocument = useCallback(async (documentId: string) => {
     if (!activeThreadId) return;
     try {
       await detachDocumentFromThread(activeThreadId, documentId);
-      setThreadDocuments((prev) => prev.filter((d) => d.document_id !== documentId));
+      await refreshThreadDocuments(activeThreadId);
     } catch {
       // ignore
     }
-  }, [activeThreadId]);
+  }, [activeThreadId, refreshThreadDocuments]);
+
+  const handleToggleThreadDocument = useCallback(async (documentId: string) => {
+    if (!activeThreadId) return;
+    const isAttached = threadDocuments.some((d) => d.document_id === documentId);
+    try {
+      if (isAttached) {
+        await detachDocumentFromThread(activeThreadId, documentId);
+      } else {
+        await attachDocumentToThread(activeThreadId, documentId);
+      }
+      await refreshThreadDocuments(activeThreadId);
+    } catch {
+      // ignore
+    }
+  }, [activeThreadId, threadDocuments, refreshThreadDocuments]);
 
   const handleWebSearch = useCallback(
     (query: string) => {
@@ -489,7 +531,7 @@ export default function Home() {
           onImportComplete={() => setRefreshSidebar((prev) => prev + 1)}
         />
       ) : currentView === "training" ? (
-        <TrainingView onBack={() => setCurrentView("chat")} selectedModel={selectedModel} />
+        <TrainingView onBack={() => setCurrentView("chat")} selectedModel={selectedModel} onSelectModel={setSelectedModel} />
       ) : currentView === "models" ? (
         <div className="flex-1 flex flex-col h-screen" style={{ background: "var(--bg-primary)" }}>
           <div
@@ -615,7 +657,7 @@ export default function Home() {
                   }}
                 >
                   <FileText size={10} />
-                  {doc.title || doc.document_id.slice(0, 12) + "..."}
+                  {doc.filename}
                   <button
                     onClick={() => handleDetachDocument(doc.document_id)}
                     className="ml-0.5 p-0.5 rounded hover:bg-red-500/20 transition-colors"
@@ -639,6 +681,12 @@ export default function Home() {
             onWebSearch={handleWebSearch}
             isSearching={isSearching}
             documentsAttached={threadDocuments.length > 0}
+            availableDocuments={allDocuments.map((doc) => ({
+              document_id: doc.document_id,
+              filename: doc.filename,
+            }))}
+            selectedDocumentIds={threadDocuments.map((doc) => doc.document_id)}
+            onToggleDocumentReference={handleToggleThreadDocument}
           />
 
           {/* Thread Settings Slide-over Panel */}

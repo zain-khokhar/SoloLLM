@@ -30,6 +30,7 @@ import {
   RAGStats,
   TrainingStatus,
   TrainingDataPreview,
+  TrainingCapabilities,
 } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
@@ -1082,7 +1083,14 @@ export async function listDocuments(
   const data = await fetchJSON<{ documents: DocumentInfo[] }>(
     `/documents/list?workspace_id=${encodeURIComponent(workspaceId)}`
   );
-  return data.documents;
+  // Backend persists primary key as `id`; normalize for frontend contract (`document_id`).
+  return data.documents.map((doc) => {
+    const normalized = doc as DocumentInfo & { id?: string };
+    return {
+      ...normalized,
+      document_id: normalized.document_id ?? normalized.id ?? "",
+    };
+  });
 }
 
 export async function deleteDocument(documentId: string): Promise<void> {
@@ -1116,11 +1124,24 @@ export async function startTraining(params: {
   model: string;
   output_name?: string;
   conversation_ids?: string[];
+  document_ids?: string[];
+  source_mode?: "conversation" | "documents" | "mixed";
+  workspace_id?: string;
   lora_rank?: number;
   num_epochs?: number;
   learning_rate?: number;
   max_seq_length?: number;
-}): Promise<{ status: string; examples: number; base_model: string }> {
+  validation_split?: number;
+  quality_loss_threshold?: number;
+}): Promise<{
+  status: string;
+  examples: number;
+  training_examples: number;
+  validation_examples: number;
+  base_model: string;
+  source_mode: "conversation" | "documents" | "mixed";
+  documents_used: string[];
+}> {
   return fetchJSON("/training/start", {
     method: "POST",
     body: JSON.stringify(params),
@@ -1131,15 +1152,34 @@ export async function getTrainingStatus(): Promise<TrainingStatus> {
   return fetchJSON("/training/status");
 }
 
+export async function getTrainingCapabilities(model: string): Promise<TrainingCapabilities> {
+  const params = new URLSearchParams();
+  params.set("model", model);
+  return fetchJSON(`/training/capabilities?${params.toString()}`);
+}
+
 export async function cancelTraining(): Promise<{ status: string }> {
   return fetchJSON("/training/cancel", { method: "POST" });
 }
 
 export async function previewTrainingData(
-  conversationIds?: string[]
+  conversationIds?: string[],
+  documentIds?: string[],
+  sourceMode?: "conversation" | "documents" | "mixed",
+  workspaceId: string = "default"
 ): Promise<TrainingDataPreview> {
-  const url = conversationIds
-    ? `/training/data/preview?conversation_ids=${conversationIds.join(",")}`
-    : "/training/data/preview";
+  const params = new URLSearchParams();
+  if (conversationIds?.length) {
+    params.set("conversation_ids", conversationIds.join(","));
+  }
+  if (documentIds?.length) {
+    params.set("document_ids", documentIds.join(","));
+  }
+  if (sourceMode) {
+    params.set("source_mode", sourceMode);
+  }
+  params.set("workspace_id", workspaceId);
+  const query = params.toString();
+  const url = query ? `/training/data/preview?${query}` : "/training/data/preview";
   return fetchJSON(url);
 }

@@ -231,7 +231,17 @@ async def web_search_chat(request: WebSearchRequest):
     return EventSourceResponse(event_generator(), media_type="text/event-stream")
 
 
-async def _stream_chat(messages: list[dict], model: str, max_tokens: int, temperature: float, conversation_id: str, message_id: str, thread_id: str | None = None, distillation_meta: dict | None = None):
+async def _stream_chat(
+    messages: list[dict],
+    model: str,
+    max_tokens: int,
+    temperature: float,
+    conversation_id: str,
+    message_id: str,
+    thread_id: str | None = None,
+    distillation_meta: dict | None = None,
+    document_ids_used: list[str] | None = None,
+):
     """Generator that streams SSE events for a chat response."""
     tracker = TokenTracker(max_tokens=max_tokens)
     full_content = ""
@@ -271,7 +281,12 @@ async def _stream_chat(messages: list[dict], model: str, max_tokens: int, temper
 
         # Save message to database
         token_count = eval_count if eval_count > 0 else estimate_token_count(full_content)
-        await update_message(message_id, full_content, token_count)
+        await update_message(
+            message_id,
+            full_content,
+            token_count,
+            documents_used=document_ids_used or [],
+        )
 
         # Track KV-cache state
         kv_cache_manager.save_cache_state(conversation_id, model, token_count)
@@ -414,6 +429,7 @@ async def chat(request: ChatRequest):
         system_prompt = conversation["system_prompt"]
 
     distillation_meta = None
+    document_ids_used: list[str] = []
 
     # Determine which documents are attached to this thread (for scoped RAG)
     thread_doc_ids = None
@@ -497,10 +513,20 @@ async def chat(request: ChatRequest):
                             "document_title": c.document_title,
                             "section_title": c.section_title,
                             "page_number": c.page_number,
+                            "document_id": c.document_id,
                         }
                         for c in distill_result["cited_context"].citations
                     ] if distill_result.get("cited_context") else [],
                 }
+
+                if distill_result.get("cited_context"):
+                    document_ids_used = sorted(
+                        {
+                            c.document_id
+                            for c in distill_result["cited_context"].citations
+                            if getattr(c, "document_id", None)
+                        }
+                    )
 
                 # Save distillation metric
                 await save_distillation_metric({
@@ -561,6 +587,9 @@ async def chat(request: ChatRequest):
 
     # Build context using thread-aware context builder (ISOLATED)
     # Use intent-filtered messages instead of all db_messages
+    if not document_ids_used and documents_only_mode and thread_doc_ids:
+        document_ids_used = sorted(set(thread_doc_ids))
+
     ollama_messages = thread_context_builder.build_isolated_context(
         thread_messages=context_messages,
         system_prompt=system_prompt,
@@ -574,7 +603,17 @@ async def chat(request: ChatRequest):
     message_id = assistant_msg["id"]
 
     return EventSourceResponse(
-        _stream_chat(ollama_messages, model, max_tokens, temperature, conversation_id, message_id, thread_id, distillation_meta),
+        _stream_chat(
+            ollama_messages,
+            model,
+            max_tokens,
+            temperature,
+            conversation_id,
+            message_id,
+            thread_id,
+            distillation_meta,
+            document_ids_used=document_ids_used,
+        ),
         media_type="text/event-stream",
     )
 

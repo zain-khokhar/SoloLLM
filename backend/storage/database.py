@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS messages (
     is_continuation INTEGER DEFAULT 0,
     continuation_of TEXT,
     thread_id TEXT,
+    documents_used TEXT DEFAULT '[]',
     created_at TEXT NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
     FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE SET NULL
@@ -183,6 +184,9 @@ async def init_db():
         if "thread_id" not in columns:
             await db.execute("ALTER TABLE messages ADD COLUMN thread_id TEXT")
             await db.commit()
+        if "documents_used" not in columns:
+            await db.execute("ALTER TABLE messages ADD COLUMN documents_used TEXT DEFAULT '[]'")
+            await db.commit()
         # Migration: add context management columns to thread_settings if missing
         cursor = await db.execute("PRAGMA table_info(thread_settings)")
         ts_columns = [row[1] for row in await cursor.fetchall()]
@@ -287,6 +291,7 @@ async def add_message(
     is_continuation: bool = False,
     continuation_of: str | None = None,
     thread_id: str | None = None,
+    documents_used: list[str] | None = None,
 ) -> dict:
     db = await get_db()
     try:
@@ -294,9 +299,20 @@ async def add_message(
         now = _now()
         # Ensure thread_id column exists (added for thread support)
         await db.execute(
-            """INSERT INTO messages (id, conversation_id, role, content, token_count, is_continuation, continuation_of, thread_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (mid, conversation_id, role, content, token_count, int(is_continuation), continuation_of, thread_id, now),
+            """INSERT INTO messages (id, conversation_id, role, content, token_count, is_continuation, continuation_of, thread_id, documents_used, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                mid,
+                conversation_id,
+                role,
+                content,
+                token_count,
+                int(is_continuation),
+                continuation_of,
+                thread_id,
+                json.dumps(documents_used or []),
+                now,
+            ),
         )
         # Update conversation timestamp
         await db.execute(
@@ -308,7 +324,7 @@ async def add_message(
             "id": mid, "conversation_id": conversation_id, "role": role,
             "content": content, "token_count": token_count,
             "is_continuation": is_continuation, "continuation_of": continuation_of,
-            "thread_id": thread_id, "created_at": now,
+            "thread_id": thread_id, "documents_used": documents_used or [], "created_at": now,
         }
     finally:
         await db.close()
@@ -337,24 +353,45 @@ async def get_messages(conversation_id: str, thread_id: str | None = None) -> li
                     (conversation_id,),
                 )
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        parsed: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            raw_docs = item.get("documents_used")
+            if isinstance(raw_docs, str):
+                try:
+                    item["documents_used"] = json.loads(raw_docs)
+                except json.JSONDecodeError:
+                    item["documents_used"] = []
+            elif raw_docs is None:
+                item["documents_used"] = []
+            parsed.append(item)
+        return parsed
     finally:
         await db.close()
 
 
-async def update_message(message_id: str, content: str, token_count: int | None = None) -> bool:
+async def update_message(
+    message_id: str,
+    content: str,
+    token_count: int | None = None,
+    documents_used: list[str] | None = None,
+) -> bool:
     db = await get_db()
     try:
+        set_parts = ["content = ?"]
+        values: list[object] = [content]
         if token_count is not None:
-            await db.execute(
-                "UPDATE messages SET content = ?, token_count = ? WHERE id = ?",
-                (content, token_count, message_id),
-            )
-        else:
-            await db.execute(
-                "UPDATE messages SET content = ? WHERE id = ?",
-                (content, message_id),
-            )
+            set_parts.append("token_count = ?")
+            values.append(token_count)
+        if documents_used is not None:
+            set_parts.append("documents_used = ?")
+            values.append(json.dumps(documents_used))
+
+        values.append(message_id)
+        await db.execute(
+            f"UPDATE messages SET {', '.join(set_parts)} WHERE id = ?",
+            values,
+        )
         await db.commit()
         return True
     finally:
@@ -366,7 +403,18 @@ async def get_message(message_id: str) -> dict | None:
     try:
         cursor = await db.execute("SELECT * FROM messages WHERE id = ?", (message_id,))
         row = await cursor.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        item = dict(row)
+        raw_docs = item.get("documents_used")
+        if isinstance(raw_docs, str):
+            try:
+                item["documents_used"] = json.loads(raw_docs)
+            except json.JSONDecodeError:
+                item["documents_used"] = []
+        elif raw_docs is None:
+            item["documents_used"] = []
+        return item
     finally:
         await db.close()
 
