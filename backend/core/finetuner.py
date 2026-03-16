@@ -21,6 +21,7 @@ from pathlib import Path
 from core.config import settings
 from core.hardware import get_cpu_ram_gb, get_gpu_memory_gb
 from core.training import TrainingConfig, TrainingProgress, TrainingStatus
+from storage import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +276,18 @@ class FineTuner:
             self._progress.status = TrainingStatus.REGISTERING
             self._progress.message = "Registering model with Ollama..."
             await self._register_with_ollama(config, str(model_output_dir))
+
+            # Save model info to database
+            await db.save_finetuned_model(
+                name=config.output_name,
+                display_name=config.output_name.replace("-", " ").title(),
+                base_model=config.ollama_model_name,
+                base_model_hf=hf_model,
+                model_path=str(model_output_dir),
+                training_examples=len(training_data),
+                final_loss=effective_val_loss,
+                is_registered=True,
+            )
 
             # Done
             self._progress.status = TrainingStatus.COMPLETE

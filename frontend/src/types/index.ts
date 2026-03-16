@@ -430,6 +430,7 @@ export interface TrainingStatus {
   best_val_loss?: number;
   quality_passed?: boolean;
   epoch: number;
+  device?: "gpu" | "cpu";
   message: string;
   error: string | null;
 }
@@ -463,4 +464,30 @@ export interface ModelDetailInfo {
   context_length: number | null;
   details: Record<string, unknown>;
   parameters: string;
+}
+
+export interface TrainingCapabilities {
+  gpu_available: boolean;
+  gpu_memory_gb: number | null;
+  cpu_ram_gb: number;
+  recommended_device: "gpu" | "cpu";
+  required_gpu_memory_gb: number;
+  required_cpu_ram_gb: number;
+  can_train_on_gpu: boolean;
+  can_train_on_cpu: boolean;
+  message: string;
+}
+
+export interface FinetunedModel {
+  id: string;
+  name: string;
+  display_name: string;
+  base_model: string;
+  base_model_hf: string;
+  training_examples: number;
+  final_loss: number | null;
+  model_path: string;
+  is_registered: boolean;
+  created_at: string;
+  registered_at: string | null;
 }

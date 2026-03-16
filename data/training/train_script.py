@@ -51,7 +51,7 @@ progress(message="Applying LoRA adapters...", status="training")
 
 # Apply LoRA
 lora_config = LoraConfig(
-    r=4,
+    r=16,
     lora_alpha=16,
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                     "gate_proj", "up_proj", "down_proj"],
@@ -129,8 +129,8 @@ trainer = SFTTrainer(
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         warmup_ratio=0.03,
-        num_train_epochs=1,
-        learning_rate=5.011872336272725e-05,
+        num_train_epochs=2,
+        learning_rate=0.0002,
         fp16=use_fp16,
         bf16=use_bf16,
         logging_steps=1,

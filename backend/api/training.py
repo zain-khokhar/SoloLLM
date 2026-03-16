@@ -7,6 +7,7 @@ from typing import Optional
 
 from core.training import TrainingDataPreparer, TrainingConfig
 from core.finetuner import fine_tuner
+from storage import database as db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/training")
@@ -135,6 +136,12 @@ async def cancel_training():
     return {"status": "cancelled"}
 
 
+@router.get("/capabilities")
+async def get_training_capabilities(model: str):
+    """Get training capabilities for a specific model."""
+    return fine_tuner.get_training_capabilities(model)
+
+
 @router.get("/data/preview")
 async def preview_training_data(
     conversation_ids: str | None = None,
@@ -177,3 +184,110 @@ async def preview_training_data(
         "source_mode": mode,
         "sequence": sequence,
     }
+
+
+# ── Fine-tuned Models Management ────────────────────────────
+
+
+@router.get("/models")
+async def list_finetuned_models():
+    """List all fine-tuned SoloLLM models."""
+    models = await db.list_finetuned_models()
+    return {"models": models}
+
+
+@router.get("/models/{model_name}")
+async def get_finetuned_model(model_name: str):
+    """Get details of a specific fine-tuned model."""
+    model = await db.get_finetuned_model(model_name)
+    if not model:
+        raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")
+    return {"model": model}
+
+
+class RegisterModelRequest(BaseModel):
+    name: str = Field(..., description="Name of the fine-tuned model to register")
+
+
+@router.post("/models/register")
+async def register_finetuned_model(request: RegisterModelRequest):
+    """Register a fine-tuned model with Ollama."""
+    model = await db.get_finetuned_model(request.name)
+    if not model:
+        raise HTTPException(status_code=404, detail=f"Model '{request.name}' not found")
+
+    if model.get("is_registered"):
+        return {"status": "already_registered", "model": request.name}
+
+    # Register with Ollama
+    try:
+        from core.training import TrainingConfig
+        config = TrainingConfig(
+            output_name=request.name,
+            base_model=model.get("base_model_hf", ""),
+            ollama_model_name=model.get("base_model", ""),
+        )
+        await fine_tuner._register_with_ollama(config, model["model_path"])
+        await db.update_finetuned_model_registration(request.name, True)
+        return {"status": "registered", "model": request.name}
+    except Exception as e:
+        logger.exception("Failed to register model with Ollama")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/models/unregister")
+async def unregister_finetuned_model(request: RegisterModelRequest):
+    """Unregister a fine-tuned model from Ollama (delete from Ollama)."""
+    model = await db.get_finetuned_model(request.name)
+    if not model:
+        raise HTTPException(status_code=404, detail=f"Model '{request.name}' not found")
+
+    if not model.get("is_registered"):
+        return {"status": "not_registered", "model": request.name}
+
+    # Delete from Ollama
+    try:
+        from core.inference import ollama_client
+        success = await ollama_client.delete_model(request.name)
+        if success:
+            await db.update_finetuned_model_registration(request.name, False)
+            return {"status": "unregistered", "model": request.name}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete model from Ollama")
+    except Exception as e:
+        logger.exception("Failed to unregister model from Ollama")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/models/{model_name}")
+async def delete_finetuned_model(model_name: str):
+    """Delete a fine-tuned model completely (Ollama + database + files)."""
+    import shutil
+    from pathlib import Path
+
+    model = await db.get_finetuned_model(model_name)
+    if not model:
+        raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")
+
+    # Unregister from Ollama if registered
+    if model.get("is_registered"):
+        try:
+            from core.inference import ollama_client
+            await ollama_client.delete_model(model_name)
+        except Exception as e:
+            logger.warning("Failed to delete model from Ollama: %s", e)
+
+    # Delete model files
+    model_path = model.get("model_path")
+    if model_path:
+        path = Path(model_path)
+        if path.exists():
+            try:
+                shutil.rmtree(path)
+            except Exception as e:
+                logger.warning("Failed to delete model files: %s", e)
+
+    # Delete from database
+    await db.delete_finetuned_model(model_name)
+
+    return {"status": "deleted", "model": model_name}

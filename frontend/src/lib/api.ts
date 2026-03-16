@@ -31,6 +31,7 @@ import {
   TrainingStatus,
   TrainingDataPreview,
   TrainingCapabilities,
+  FinetunedModel,
 } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
@@ -1182,4 +1183,38 @@ export async function previewTrainingData(
   const query = params.toString();
   const url = query ? `/training/data/preview?${query}` : "/training/data/preview";
   return fetchJSON(url);
+}
+
+// ── Fine-tuned Models API ──────────────────────────────────
+
+export async function listFinetunedModels(): Promise<FinetunedModel[]> {
+  const data = await fetchJSON<{ models: FinetunedModel[] }>("/training/models");
+  return data.models;
+}
+
+export async function getFinetunedModel(name: string): Promise<FinetunedModel> {
+  const data = await fetchJSON<{ model: FinetunedModel }>(
+    `/training/models/${encodeURIComponent(name)}`
+  );
+  return data.model;
+}
+
+export async function registerFinetunedModel(name: string): Promise<{ status: string; model: string }> {
+  return fetchJSON("/training/models/register", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function unregisterFinetunedModel(name: string): Promise<{ status: string; model: string }> {
+  return fetchJSON("/training/models/unregister", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteFinetunedModel(name: string): Promise<{ status: string; model: string }> {
+  return fetchJSON(`/training/models/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
 }

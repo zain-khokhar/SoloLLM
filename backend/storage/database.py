@@ -153,6 +153,21 @@ CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_threads_conversation ON threads(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_thread_documents_thread ON thread_documents(thread_id);
 CREATE INDEX IF NOT EXISTS idx_context_pages_thread ON context_pages(thread_id);
+
+CREATE TABLE IF NOT EXISTS finetuned_models (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    base_model TEXT NOT NULL,
+    base_model_hf TEXT,
+    training_examples INTEGER DEFAULT 0,
+    final_loss REAL,
+    model_path TEXT NOT NULL,
+    is_registered INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    registered_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_finetuned_models_name ON finetuned_models(name);
 """
 
 
@@ -915,5 +930,103 @@ async def save_context_pages(thread_id: str, pages: list) -> None:
                 (pid, thread_id, page_number, content, token_count, int(is_active), now),
             )
         await db.commit()
+    finally:
+        await db.close()
+
+
+# ── Fine-tuned Models ────────────────────────────────────────
+
+async def save_finetuned_model(
+    name: str,
+    display_name: str,
+    base_model: str,
+    base_model_hf: str,
+    model_path: str,
+    training_examples: int = 0,
+    final_loss: float | None = None,
+    is_registered: bool = False,
+) -> dict:
+    """Save a fine-tuned model to the database."""
+    db = await get_db()
+    try:
+        mid = new_id()
+        now = _now()
+        registered_at = now if is_registered else None
+        await db.execute(
+            """INSERT INTO finetuned_models
+               (id, name, display_name, base_model, base_model_hf, training_examples, final_loss, model_path, is_registered, created_at, registered_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(name) DO UPDATE SET
+               display_name=?, base_model=?, base_model_hf=?, training_examples=?, final_loss=?, model_path=?, is_registered=?, registered_at=?""",
+            (
+                mid, name, display_name, base_model, base_model_hf, training_examples, final_loss,
+                model_path, int(is_registered), now, registered_at,
+                display_name, base_model, base_model_hf, training_examples, final_loss,
+                model_path, int(is_registered), registered_at,
+            ),
+        )
+        await db.commit()
+        return {
+            "id": mid, "name": name, "display_name": display_name,
+            "base_model": base_model, "base_model_hf": base_model_hf,
+            "training_examples": training_examples, "final_loss": final_loss,
+            "model_path": model_path, "is_registered": is_registered,
+            "created_at": now, "registered_at": registered_at,
+        }
+    finally:
+        await db.close()
+
+
+async def list_finetuned_models() -> list[dict]:
+    """List all fine-tuned models."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM finetuned_models ORDER BY created_at DESC"
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_finetuned_model(name: str) -> dict | None:
+    """Get a fine-tuned model by name."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM finetuned_models WHERE name = ?", (name,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def update_finetuned_model_registration(name: str, is_registered: bool) -> bool:
+    """Update the registration status of a fine-tuned model."""
+    db = await get_db()
+    try:
+        now = _now()
+        registered_at = now if is_registered else None
+        await db.execute(
+            "UPDATE finetuned_models SET is_registered = ?, registered_at = ? WHERE name = ?",
+            (int(is_registered), registered_at, name),
+        )
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def delete_finetuned_model(name: str) -> bool:
+    """Delete a fine-tuned model record."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "DELETE FROM finetuned_models WHERE name = ?", (name,)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
     finally:
         await db.close()
