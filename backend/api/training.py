@@ -1,6 +1,7 @@
 """Training API endpoints for SoloLLM self-training system."""
 
 import logging
+from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -209,6 +210,16 @@ class RegisterModelRequest(BaseModel):
     name: str = Field(..., description="Name of the fine-tuned model to register")
 
 
+class ImportAndRegisterModelRequest(BaseModel):
+    name: str = Field(..., description="Model name to register in Ollama")
+    model_path: str = Field(..., description="Path to exported HF model directory")
+    base_model: str = Field(default="", description="Original Ollama base model name")
+    base_model_hf: str = Field(default="", description="Original HuggingFace base model id")
+    display_name: Optional[str] = None
+    training_examples: int = 0
+    final_loss: Optional[float] = None
+
+
 @router.post("/models/register")
 async def register_finetuned_model(request: RegisterModelRequest):
     """Register a fine-tuned model with Ollama."""
@@ -232,6 +243,42 @@ async def register_finetuned_model(request: RegisterModelRequest):
         return {"status": "registered", "model": request.name}
     except Exception as e:
         logger.exception("Failed to register model with Ollama")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/models/import-register")
+async def import_and_register_finetuned_model(request: ImportAndRegisterModelRequest):
+    """Import an existing exported model directory, register it with Ollama, and save it in DB."""
+    path = Path(request.model_path)
+    if not path.exists() or not path.is_dir():
+        raise HTTPException(status_code=400, detail=f"Model path does not exist: {request.model_path}")
+
+    if not (path / "config.json").exists():
+        raise HTTPException(
+            status_code=400,
+            detail="Model path does not look like a merged HF model directory (missing config.json)",
+        )
+
+    try:
+        config = TrainingConfig(
+            output_name=request.name,
+            base_model=request.base_model_hf,
+            ollama_model_name=request.base_model,
+        )
+        await fine_tuner._register_with_ollama(config, str(path))
+        await db.save_finetuned_model(
+            name=request.name,
+            display_name=request.display_name or request.name.replace("-", " ").title(),
+            base_model=request.base_model,
+            base_model_hf=request.base_model_hf,
+            model_path=str(path),
+            training_examples=request.training_examples,
+            final_loss=request.final_loss,
+            is_registered=True,
+        )
+        return {"status": "registered", "model": request.name}
+    except Exception as e:
+        logger.exception("Failed to import/register fine-tuned model")
         raise HTTPException(status_code=500, detail=str(e))
 
 

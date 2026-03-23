@@ -96,6 +96,7 @@ class SearchResult:
     page_number: int | None = None
     chunk_index: int = 0
     metadata: dict = field(default_factory=dict)
+    score_normalized: float = 0.0  # Normalized to 0-1 range within the result batch
 
 
 class VectorStore:
@@ -461,6 +462,8 @@ class VectorStore:
         top_k: int = 10,
         document_id: str | None = None,
         document_ids: list[str] | None = None,
+        score_threshold: float | None = None,
+        fetch_k: int | None = None,
     ) -> list[SearchResult]:
         """Search for similar chunks using FAISS cosine similarity (IP on normalized vectors)."""
         self._ensure_faiss_available()
@@ -476,12 +479,14 @@ class VectorStore:
             if index.ntotal == 0:
                 return []
 
-            # Over-fetch when metadata filters are applied.
+            # Over-fetch when metadata filters are applied or explicit fetch_k given.
             filtered = bool(document_id or document_ids)
-            fetch_k = top_k if not filtered else max(top_k * 10, 100)
-            fetch_k = min(fetch_k, int(index.ntotal))
+            effective_fetch_k = fetch_k if fetch_k is not None else (
+                top_k if not filtered else max(top_k * 10, 100)
+            )
+            effective_fetch_k = min(effective_fetch_k, int(index.ntotal))
 
-            scores, ids = index.search(query_vec, fetch_k)
+            scores, ids = index.search(query_vec, effective_fetch_k)
             candidate_pairs = [
                 (int(vector_id), float(score))
                 for vector_id, score in zip(ids[0].tolist(), scores[0].tolist())
@@ -526,9 +531,22 @@ class VectorStore:
         row_by_vector_id = {int(r["vector_id"]): dict(r) for r in rows}
         results: list[SearchResult] = []
 
+        # Determine max score for normalization
+        all_scores = [score_by_vector_id.get(vid, 0.0) for vid in vector_ids if row_by_vector_id.get(vid) is not None]
+        max_score = max(all_scores) if all_scores else 1.0
+        if max_score <= 0:
+            max_score = 1.0
+
         for vector_id in vector_ids:
             row = row_by_vector_id.get(vector_id)
             if row is None:
+                continue
+
+            raw_score = score_by_vector_id.get(vector_id, 0.0)
+            normalized = max(0.0, raw_score) / max_score if max_score > 0 else 0.0
+
+            # Apply score threshold gate (precision mode)
+            if score_threshold is not None and normalized < score_threshold:
                 continue
 
             raw_metadata = row.get("metadata", "{}")
@@ -542,12 +560,13 @@ class VectorStore:
                     chunk_id=row["chunk_id"],
                     document_id=row["document_id"],
                     content=row["content"],
-                    score=score_by_vector_id.get(vector_id, 0.0),
+                    score=raw_score,
                     document_title=row.get("document_title", ""),
                     section_title=row.get("section_title", ""),
                     page_number=row.get("page_number"),
                     chunk_index=row.get("chunk_index", 0),
                     metadata=metadata,
+                    score_normalized=round(normalized, 4),
                 )
             )
             if len(results) >= top_k:

@@ -2,7 +2,7 @@
 LoRA Fine-Tuning Engine for SoloLLM.
 
 Uses standard HuggingFace transformers + PEFT for LoRA training.
-Auto-detects CUDA: uses 4-bit QLoRA on GPU, full-precision LoRA on CPU.
+Auto-detects CUDA: uses native-precision LoRA on GPU, full-precision LoRA on CPU.
 Runs training as an isolated subprocess to manage memory.
 Saves merged model and registers with Ollama.
 """
@@ -46,8 +46,8 @@ OLLAMA_TO_HF_MAP = {
     "tinyllama": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
 }
 
-# Approximate VRAM (GB) needed for 4-bit QLoRA training. No CPU offload — model must fit fully on GPU.
-MODEL_VRAM_4BIT_GB = {
+# Approximate VRAM (GB) needed for native-precision GPU LoRA training.
+MODEL_VRAM_GPU_GB = {
     "llama3.2:1b": 2.5,
     "llama3.2:3b": 5.5,
     "llama3.1:8b": 12.0,
@@ -91,6 +91,7 @@ class FineTuner:
         self._process: asyncio.subprocess.Process | None = None
         self._proc_popen: subprocess.Popen | None = None  # used on Windows for cancel
         self._training_task: asyncio.Task | None = None
+        self._last_script_error: str = ""
 
     @property
     def progress(self) -> TrainingProgress:
@@ -111,14 +112,14 @@ class FineTuner:
         return None
 
     def _get_model_memory_requirements(self, ollama_model: str) -> tuple[float, float]:
-        """Return (vram_4bit_gb, ram_cpu_gb) for the model. Estimates from param count for unknown models."""
-        vram = MODEL_VRAM_4BIT_GB.get(ollama_model)
+        """Return (vram_gpu_gb, ram_cpu_gb) for the model. Estimates from param count for unknown models."""
+        vram = MODEL_VRAM_GPU_GB.get(ollama_model)
         ram = MODEL_RAM_CPU_GB.get(ollama_model)
         if vram is not None and ram is not None:
             return (vram, ram)
         # Try prefix match
         base = ollama_model.split(":")[0]
-        for key, v in MODEL_VRAM_4BIT_GB.items():
+        for key, v in MODEL_VRAM_GPU_GB.items():
             if key.startswith(base):
                 return (v, MODEL_RAM_CPU_GB.get(key, 16.0))
         # Dynamic fallback: parse parameter count from tag (e.g. "0.5b", "1.5b", "7b")
@@ -136,7 +137,7 @@ class FineTuner:
     def get_training_capabilities(self, ollama_model: str) -> dict:
         """
         Return capabilities for the given model: GPU/CPU availability, required resources,
-        and recommended device. No hybrid: either full GPU (4-bit) or full CPU.
+        and recommended device. No hybrid: either full GPU or full CPU.
         """
         gpu_gb = get_gpu_memory_gb()
         cpu_gb = get_cpu_ram_gb()
@@ -147,7 +148,7 @@ class FineTuner:
 
         if can_gpu:
             recommended = "gpu"
-            message = f"Training will use GPU (4-bit QLoRA). Requires {vram_need} GB VRAM; you have {gpu_gb} GB."
+            message = f"Training will use GPU. Requires {vram_need} GB VRAM; you have {gpu_gb} GB."
         elif can_cpu:
             recommended = "cpu"
             message = f"Not enough GPU VRAM for this model. Training will use CPU. Requires {ram_need} GB RAM; you have {cpu_gb} GB."
@@ -196,6 +197,7 @@ class FineTuner:
     ):
         """Run the full training pipeline."""
         try:
+            self._last_script_error = ""
             # 1. Save training data as JSONL
             data_path = self.output_dir / "train_data.jsonl"
             with open(data_path, "w", encoding="utf-8") as f:
@@ -220,7 +222,7 @@ class FineTuner:
             self._progress.status = TrainingStatus.DOWNLOADING_BASE
             self._progress.message = f"Loading base model: {hf_model}"
 
-            # 3. Decide device: full GPU (4-bit) or full CPU. No hybrid (causes meta-tensor errors).
+            # 3. Decide device: full GPU or full CPU. No hybrid (causes meta-tensor errors).
             caps = self.get_training_capabilities(config.ollama_model_name)
             train_on_gpu = caps["recommended_device"] == "gpu"
             self._progress.device = "gpu" if train_on_gpu else "cpu"
@@ -261,7 +263,9 @@ class FineTuner:
                 returncode, stderr_text = await self._run_training_subprocess_asyncio(script_path)
 
             if returncode != 0:
-                error_msg = stderr_text[-2000:] if stderr_text else "Process exited with non-zero code (no stderr). Check backend logs."
+                error_msg = self._last_script_error or self._extract_relevant_error(stderr_text)
+                if not error_msg:
+                    error_msg = "Process exited with non-zero code (no stderr). Check backend logs."
                 raise RuntimeError(f"Training script failed:\n{error_msg}")
 
             # 7. Quality gate + register with Ollama
@@ -325,6 +329,14 @@ class FineTuner:
                         pass
             except json.JSONDecodeError:
                 pass
+        elif text.startswith("ERROR:"):
+            try:
+                payload = json.loads(text[6:])
+                msg = (payload.get("message") or "").strip()
+                tb = (payload.get("traceback") or "").strip()
+                self._last_script_error = f"{msg}\n{tb}".strip() if tb else msg
+            except json.JSONDecodeError:
+                self._last_script_error = text[6:].strip()
         elif text.startswith("RESULT:"):
             try:
                 result = json.loads(text[7:])
@@ -334,6 +346,24 @@ class FineTuner:
                 pass
         else:
             logger.debug("[train] %s", text)
+
+    def _extract_relevant_error(self, stderr_text: str) -> str:
+        """Extract a useful traceback or final error line from stderr text."""
+        text = (stderr_text or "").strip()
+        if not text:
+            return ""
+
+        trace_idx = text.rfind("Traceback (most recent call last):")
+        if trace_idx >= 0:
+            return text[trace_idx:].strip()[-4000:]
+
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            return ""
+        filtered = [ln for ln in lines if "|" not in ln or "%" not in ln]
+        if filtered:
+            return "\n".join(filtered[-20:])[-4000:]
+        return "\n".join(lines[-20:])[-4000:]
 
     async def _run_training_subprocess_asyncio(self, script_path: Path) -> tuple[int, str]:
         """Run training script via asyncio subprocess (Unix)."""
@@ -428,30 +458,17 @@ class FineTuner:
         output_dir: str,
         train_on_gpu: bool = True,
     ):
-        """Write a standalone Python training script. Either full GPU (4-bit) or full CPU — no hybrid."""
+        """Write a standalone Python training script. Either full GPU or full CPU — no hybrid."""
         use_gpu_flag = "True" if train_on_gpu else "False"
-        # GPU path: 4-bit, single device (cuda:0). CPU path: fp32, device_map="cpu".
+        # GPU path: native precision (bf16/fp16), single device (cuda:0). CPU path: fp32, device_map="cpu".
         if train_on_gpu:
-            load_model_block = """# GPU: 4-bit QLoRA, all layers on GPU (no CPU offload)
-load_kwargs = {"trust_remote_code": True}
-try:
-    from transformers import BitsAndBytesConfig
-    load_kwargs["quantization_config"] = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-    )
-    load_kwargs["device_map"] = "cuda:0"
-except ImportError:
-    load_kwargs["dtype"] = torch.float16
-    load_kwargs["device_map"] = "cuda:0"
+            load_model_block = """# GPU: native precision, no quantization
+load_kwargs = {
+    "trust_remote_code": True,
+    "dtype": torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+    "device_map": "cuda:0",
+}
 model = AutoModelForCausalLM.from_pretrained(hf_model, **load_kwargs)
-try:
-    from peft import prepare_model_for_kbit_training
-    model = prepare_model_for_kbit_training(model)
-except ImportError:
-    pass
 model.gradient_checkpointing_enable()
 """
         else:
@@ -459,11 +476,13 @@ model.gradient_checkpointing_enable()
 load_kwargs = {"trust_remote_code": True, "dtype": torch.float32, "device_map": "cpu"}
 model = AutoModelForCausalLM.from_pretrained(hf_model, **load_kwargs)
 """
-        base_indent = "            "
+        base_indent = ""
         load_model_indented = "\n".join(base_indent + line for line in load_model_block.strip().split("\n"))
 
         script = textwrap.dedent(f"""\
             import json, sys, os
+            import traceback
+            import gc
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
             def progress(step=0, total_steps=0, loss=0.0, val_loss=0.0, best_val_loss=0.0, epoch=0.0, lr=0.0, message="", status=""):
@@ -477,7 +496,7 @@ model = AutoModelForCausalLM.from_pretrained(hf_model, **load_kwargs)
             hf_model = "{hf_model}"
             TRAIN_ON_GPU = {use_gpu_flag}
             USE_CUDA = TRAIN_ON_GPU and torch.cuda.is_available()
-            device_label = "GPU (4-bit)" if USE_CUDA else "CPU"
+            device_label = "GPU" if USE_CUDA else "CPU"
             progress(message=f"Loading model: {{hf_model}} ({{device_label}})", status="downloading_base_model")
 
             from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
@@ -489,7 +508,7 @@ model = AutoModelForCausalLM.from_pretrained(hf_model, **load_kwargs)
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
-            # Load model — full GPU (4-bit) or full CPU only
+            # Load model — full GPU or full CPU only
             {load_model_indented}
 
             progress(message="Applying LoRA adapters...", status="training")
@@ -578,6 +597,7 @@ model = AutoModelForCausalLM.from_pretrained(hf_model, **load_kwargs)
                     learning_rate={config.learning_rate},
                     fp16=use_fp16,
                     bf16=use_bf16,
+                    disable_tqdm=True,
                     logging_steps=1,
                     output_dir=output_dir,
                     eval_strategy="epoch" if eval_dataset is not None else "no",
@@ -597,22 +617,35 @@ model = AutoModelForCausalLM.from_pretrained(hf_model, **load_kwargs)
             )
 
             progress(message="Starting training...", status="training")
-            trainer.train()
+            try:
+                trainer.train()
 
-            # Get eval metrics from training (no need to re-evaluate - SFTTrainer already did it during training)
-            best_eval_loss = float(trainer.state.best_metric or 0.0)
-            print("RESULT:" + json.dumps({{
-                "final_eval_loss": best_eval_loss,
-                "best_eval_loss": best_eval_loss,
-                "eval_examples": len(formatted_val),
-            }}), flush=True)
+                # Get eval metrics from training (no need to re-evaluate - SFTTrainer already did it during training)
+                best_eval_loss = float(trainer.state.best_metric or 0.0)
+                print("RESULT:" + json.dumps({{
+                    "final_eval_loss": best_eval_loss,
+                    "best_eval_loss": best_eval_loss,
+                    "eval_examples": len(formatted_val),
+                }}), flush=True)
 
-            # Merge LoRA into base model and save
-            progress(message="Merging LoRA and saving model...", status="exporting_gguf")
-            merged_model = model.merge_and_unload()
-            merged_model.save_pretrained(output_dir)
-            tokenizer.save_pretrained(output_dir)
-            progress(message="Model saved!", status="registering_with_ollama")
+                # Merge and save on CPU to avoid late-stage CUDA OOM/crash.
+                progress(message="Merging LoRA and saving model...", status="exporting_gguf")
+                if USE_CUDA:
+                    model = model.to("cpu")
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                gc.collect()
+
+                merged_model = model.merge_and_unload()
+                merged_model.save_pretrained(output_dir)
+                tokenizer.save_pretrained(output_dir)
+                progress(message="Model saved!", status="registering_with_ollama")
+            except Exception as e:
+                print("ERROR:" + json.dumps({{
+                    "message": str(e),
+                    "traceback": traceback.format_exc(),
+                }}), flush=True)
+                raise
         """)
 
         path.write_text(script, encoding="utf-8")
@@ -620,6 +653,16 @@ model = AutoModelForCausalLM.from_pretrained(hf_model, **load_kwargs)
 
     async def _register_with_ollama(self, config: TrainingConfig, model_dir: str):
         """Create a Modelfile and register the trained model with Ollama."""
+        ollama_bin = shutil.which("ollama")
+        embedded_bin = settings.ollama_binary_dir / ("ollama.exe" if sys.platform == "win32" else "ollama")
+        if embedded_bin.exists():
+            ollama_bin = str(embedded_bin)
+        if not ollama_bin:
+            raise RuntimeError(
+                "Ollama binary not found. Expected PATH entry or embedded binary at "
+                f"{embedded_bin}"
+            )
+
         modelfile_path = self.output_dir / "Modelfile"
         modelfile_content = f"""FROM {model_dir}
 PARAMETER temperature 0.7
@@ -633,7 +676,7 @@ SYSTEM "You are a fine-tuned version of {config.ollama_model_name}, trained on u
             result = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    ["ollama", "create", config.output_name, "-f", str(modelfile_path)],
+                    [ollama_bin, "create", config.output_name, "-f", str(modelfile_path)],
                     capture_output=True,
                     text=True,
                 ),
@@ -642,7 +685,7 @@ SYSTEM "You are a fine-tuned version of {config.ollama_model_name}, trained on u
                 raise RuntimeError(f"Ollama create failed: {result.stderr or result.stdout or 'unknown'}")
         else:
             process = await asyncio.create_subprocess_exec(
-                "ollama", "create", config.output_name, "-f", str(modelfile_path),
+                ollama_bin, "create", config.output_name, "-f", str(modelfile_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

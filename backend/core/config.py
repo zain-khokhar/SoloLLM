@@ -75,6 +75,17 @@ class Settings(BaseSettings):
     reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     reranker_local_files_only: bool = True
 
+    # RAG Precision Mode
+    rag_precision_mode: str = "legacy_rrf"  # "legacy_rrf" | "precision_fusion"
+    rag_vector_min_score: float = 0.28
+    rag_lexical_required_coverage: float = 0.5
+    rag_candidate_pool_size: int = 80
+    rag_per_document_cap: int = 2
+    rag_use_mmr: bool = True
+    rag_mmr_lambda: float = 0.65
+    rag_pre_rerank_limit: int = 24
+    rag_final_context_chunks: int = 4
+
     # Cold-start warmup
     cold_start_warmup_enabled: bool = True
     cold_start_warmup_delay_seconds: float = 1.5

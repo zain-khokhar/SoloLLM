@@ -113,20 +113,36 @@ class ContextCompressor:
         return text
 
     def _query_filter(self, text: str, query: str) -> str:
-        """Keep sentences that are relevant to the query."""
-        query_terms = set(re.findall(r'\w+', query.lower()))
+        """Keep sentences that are relevant to the query using keyphrase matching."""
+        from rag.query_understanding import query_analyzer
 
-        if not query_terms:
+        analysis = query_analyzer.analyze(query)
+        keyphrases = analysis.keyphrases
+        required_terms = set(analysis.required_terms)
+
+        if not required_terms and not keyphrases:
             return text
 
         sentences = re.split(r'(?<=[.!?])\s+', text)
         kept = []
 
         for sentence in sentences:
-            sentence_terms = set(re.findall(r'\w+', sentence.lower()))
-            overlap = query_terms & sentence_terms
-            # Keep if any query term matches or sentence is very short (connector)
-            if overlap or len(sentence.split()) < 5:
+            sentence_lower = sentence.lower()
+
+            # Keep if any keyphrase matches
+            if any(kp in sentence_lower for kp in keyphrases):
+                kept.append(sentence)
+                continue
+
+            # Keep if >= 2 required terms are present (not just one generic token)
+            sentence_terms = set(re.findall(r'\w+', sentence_lower))
+            matched_required = required_terms & sentence_terms
+            if len(matched_required) >= 2:
+                kept.append(sentence)
+                continue
+
+            # Keep very short connector sentences
+            if len(sentence.split()) < 5:
                 kept.append(sentence)
 
         return ' '.join(kept)
@@ -438,6 +454,8 @@ class ConfidenceScorer:
         - retrieval_quality: How good were the retrieved chunks
         - coverage: How well does the context cover the query
         - source_diversity: Variety of sources used
+        - phrase_coverage: How well keyphrases are covered
+        - dispersion_penalty: Penalty for scattered/noisy results
         """
         if not retrieval_results:
             return {
@@ -445,6 +463,8 @@ class ConfidenceScorer:
                 "retrieval_quality": 0.0,
                 "coverage": 0.0,
                 "source_diversity": 0.0,
+                "phrase_coverage": 0.0,
+                "dispersion_penalty": 0.0,
                 "level": "low",
             }
 
@@ -462,12 +482,35 @@ class ConfidenceScorer:
         doc_ids = set(getattr(r, 'document_id', '') for r in retrieval_results)
         diversity = min(len(doc_ids) / 3, 1.0)  # Ideal: 3+ distinct sources
 
+        # Phrase coverage — how many keyphrases appear in context
+        phrase_cov = 0.0
+        try:
+            from rag.query_understanding import query_analyzer
+            analysis = query_analyzer.analyze(query)
+            if analysis.keyphrases:
+                context_lower = context_text.lower()
+                matched = sum(1 for kp in analysis.keyphrases if kp in context_lower)
+                phrase_cov = matched / len(analysis.keyphrases)
+        except Exception:
+            pass
+
+        # Dispersion penalty — penalize when scores vary widely (noisy retrieval)
+        dispersion_penalty = 0.0
+        if len(scores) > 1:
+            mean_s = avg_score
+            variance = sum((s - mean_s) ** 2 for s in scores) / len(scores)
+            std_dev = variance ** 0.5
+            dispersion_penalty = min(std_dev * 0.5, 0.2)  # Cap at 0.2
+
         # Overall
         overall = (
-            retrieval_quality * 0.4
-            + coverage * 0.35
-            + diversity * 0.25
+            retrieval_quality * 0.30
+            + coverage * 0.25
+            + diversity * 0.15
+            + phrase_cov * 0.20
+            - dispersion_penalty
         )
+        overall = max(0.0, min(1.0, overall + 0.1))  # Floor boost
 
         # Level
         if overall >= 0.7:
@@ -482,6 +525,8 @@ class ConfidenceScorer:
             "retrieval_quality": round(retrieval_quality, 3),
             "coverage": round(coverage, 3),
             "source_diversity": round(diversity, 3),
+            "phrase_coverage": round(phrase_cov, 3),
+            "dispersion_penalty": round(dispersion_penalty, 3),
             "level": level,
         }
 

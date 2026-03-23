@@ -376,6 +376,19 @@ export interface ThreadSettings {
   memory_layers: number;
   max_history_messages: number;
   compression_ratio: number;
+  // KV / memory fields
+  kv_compression_enabled: boolean;
+  memory_layer_mode: "none" | "sliding_window" | "virtual_paging";
+  memory_page_size: number;
+  context_window_size: number;
+  // Precision mode controls
+  rag_precision_mode: string;
+  rag_vector_min_score: number;
+  rag_lexical_required_coverage: number;
+  rag_candidate_pool_size: number;
+  rag_per_document_cap: number;
+  rag_use_mmr: boolean;
+  rag_mmr_lambda: number;
 }
 
 export interface ThreadContextPage {

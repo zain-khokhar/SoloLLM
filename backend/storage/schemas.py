@@ -172,3 +172,11 @@ class ThreadSettingsUpdate(BaseModel):
     memory_layers: Optional[int] = None
     max_history_messages: Optional[int] = None
     compression_ratio: Optional[float] = None
+    # Precision mode controls
+    rag_precision_mode: Optional[str] = None
+    rag_vector_min_score: Optional[float] = None
+    rag_lexical_required_coverage: Optional[float] = None
+    rag_candidate_pool_size: Optional[int] = None
+    rag_per_document_cap: Optional[int] = None
+    rag_use_mmr: Optional[bool] = None
+    rag_mmr_lambda: Optional[float] = None

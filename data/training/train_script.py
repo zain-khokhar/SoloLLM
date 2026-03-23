@@ -12,7 +12,7 @@ import torch
 hf_model = "Qwen/Qwen2.5-0.5B-Instruct"
 TRAIN_ON_GPU = True
 USE_CUDA = TRAIN_ON_GPU and torch.cuda.is_available()
-device_label = "GPU (4-bit)" if USE_CUDA else "CPU"
+device_label = "GPU" if USE_CUDA else "CPU"
 progress(message=f"Loading model: {hf_model} ({device_label})", status="downloading_base_model")
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
@@ -24,34 +24,21 @@ tokenizer = AutoTokenizer.from_pretrained(hf_model, trust_remote_code=True)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-# Load model — full GPU (4-bit) or full CPU only
-            # GPU: 4-bit QLoRA, all layers on GPU (no CPU offload)
-load_kwargs = {"trust_remote_code": True}
-try:
-    from transformers import BitsAndBytesConfig
-    load_kwargs["quantization_config"] = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-    )
-    load_kwargs["device_map"] = "cuda:0"
-except ImportError:
-    load_kwargs["dtype"] = torch.float16
-    load_kwargs["device_map"] = "cuda:0"
+# Load model — full GPU or full CPU only
+            # GPU: native precision, no quantization
+load_kwargs = {
+    "trust_remote_code": True,
+    "dtype": torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+    "device_map": "cuda:0",
+}
 model = AutoModelForCausalLM.from_pretrained(hf_model, **load_kwargs)
-try:
-    from peft import prepare_model_for_kbit_training
-    model = prepare_model_for_kbit_training(model)
-except ImportError:
-    pass
 model.gradient_checkpointing_enable()
 
 progress(message="Applying LoRA adapters...", status="training")
 
 # Apply LoRA
 lora_config = LoraConfig(
-    r=16,
+    r=32,
     lora_alpha=16,
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                     "gate_proj", "up_proj", "down_proj"],

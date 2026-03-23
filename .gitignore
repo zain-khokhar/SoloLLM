@@ -39,6 +39,7 @@ data/db/
 data/documents/
 data/uploads/
 data/ollama/
+docs/
 
 # ─── AI Models (Ollama blobs & manifests) ─────────────────────────────────────
 data/models/

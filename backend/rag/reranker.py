@@ -22,7 +22,7 @@ def _load_cross_encoder(model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     """Lazily load the cross-encoder model."""
     global _cross_encoder, _cross_encoder_failed
 
-    if not settings.reranker_enabled:
+    if not settings.reranker_enabled and settings.rag_precision_mode != "precision_fusion":
         return None
 
     if _cross_encoder is not None:
@@ -71,22 +71,37 @@ class Reranker:
         query: str,
         results: list,
         top_k: int = 5,
-    ) -> list:
+        score_threshold: float | None = None,
+    ) -> dict:
         """
         Re-rank results by relevance to the query.
 
-        Returns the top_k most relevant results with updated scores.
+        Returns dict with:
+        - results: top_k most relevant results with updated scores
+        - confidence: average score of top results (0-1 range)
         """
         if not results:
-            return []
+            return {"results": [], "confidence": 0.0}
 
         # Try cross-encoder first
         model = _load_cross_encoder(self.model_name)
 
         if model is not None:
-            return self._cross_encoder_rerank(model, query, results, top_k)
+            reranked = self._cross_encoder_rerank(model, query, results, top_k)
         else:
-            return self._heuristic_rerank(query, results, top_k)
+            reranked = self._heuristic_rerank(query, results, top_k)
+
+        # Apply score threshold if provided
+        if score_threshold is not None:
+            reranked = [r for r in reranked if r.score >= score_threshold]
+
+        # Compute confidence as average score of returned results
+        confidence = 0.0
+        if reranked:
+            confidence = sum(r.score for r in reranked) / len(reranked)
+            confidence = min(max(confidence, 0.0), 1.0)
+
+        return {"results": reranked, "confidence": round(confidence, 4)}
 
     def _cross_encoder_rerank(self, model, query: str, results: list, top_k: int) -> list:
         """Re-rank using cross-encoder model."""
@@ -157,6 +172,19 @@ class Reranker:
     def _tokenize(self, text: str) -> list[str]:
         """Simple tokenization for heuristic scoring."""
         return [w for w in re.findall(r'\w+', text) if len(w) > 1]
+
+    def warmup(self):
+        """Pre-load the cross-encoder model to avoid first-request latency."""
+        model = _load_cross_encoder(self.model_name)
+        if model is not None:
+            try:
+                # Run a dummy prediction to warm up
+                model.predict([("warmup query", "warmup content")])
+                logger.info("Reranker model warmed up successfully")
+            except Exception as e:
+                logger.warning(f"Reranker warmup failed: {e}")
+        else:
+            logger.info("Reranker warmup skipped (model not available)")
 
 
 # Singleton

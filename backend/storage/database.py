@@ -211,6 +211,28 @@ async def init_db():
         if "compression_ratio" not in ts_columns:
             await db.execute("ALTER TABLE thread_settings ADD COLUMN compression_ratio REAL DEFAULT 0.6")
             await db.commit()
+        # Migration: add precision mode columns to thread_settings if missing
+        if "rag_precision_mode" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN rag_precision_mode TEXT DEFAULT 'legacy_rrf'")
+            await db.commit()
+        if "rag_vector_min_score" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN rag_vector_min_score REAL DEFAULT 0.28")
+            await db.commit()
+        if "rag_lexical_required_coverage" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN rag_lexical_required_coverage REAL DEFAULT 0.5")
+            await db.commit()
+        if "rag_candidate_pool_size" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN rag_candidate_pool_size INTEGER DEFAULT 80")
+            await db.commit()
+        if "rag_per_document_cap" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN rag_per_document_cap INTEGER DEFAULT 2")
+            await db.commit()
+        if "rag_use_mmr" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN rag_use_mmr INTEGER DEFAULT 1")
+            await db.commit()
+        if "rag_mmr_lambda" not in ts_columns:
+            await db.execute("ALTER TABLE thread_settings ADD COLUMN rag_mmr_lambda REAL DEFAULT 0.65")
+            await db.commit()
     finally:
         await db.close()
 
@@ -826,7 +848,7 @@ async def get_thread_settings(thread_id: str) -> dict | None:
 async def update_thread_settings(thread_id: str, **kwargs) -> bool:
     db = await get_db()
     try:
-        allowed = {"max_tokens", "temperature", "rag_enabled", "rag_top_k", "compression_enabled", "memory_layers", "max_history_messages", "compression_ratio"}
+        allowed = {"max_tokens", "temperature", "rag_enabled", "rag_top_k", "compression_enabled", "memory_layers", "max_history_messages", "compression_ratio", "rag_precision_mode", "rag_vector_min_score", "rag_lexical_required_coverage", "rag_candidate_pool_size", "rag_per_document_cap", "rag_use_mmr", "rag_mmr_lambda"}
         fields = {k: v for k, v in kwargs.items() if k in allowed}
         if not fields:
             return False

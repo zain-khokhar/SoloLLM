@@ -1,6 +1,6 @@
 """
 Hardware detection for training: GPU VRAM and CPU RAM.
-Used to decide whether a model can train on GPU (4-bit) or must use CPU.
+Used to decide whether a model can train on GPU or must use CPU.
 """
 
 import logging

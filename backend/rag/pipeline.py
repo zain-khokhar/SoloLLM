@@ -230,13 +230,20 @@ class RAGPipeline:
 
         Returns a CitedContext with formatted context and source references.
         """
-        # Step 1: Hybrid retrieval
-        results = await hybrid_retriever.retrieve(
+        # Step 1: Hybrid retrieval (precision-aware)
+        results, _diag = await hybrid_retriever.retrieve(
             query=query,
             workspace_id=workspace_id,
             top_k=top_k * 3,  # Over-fetch for reranking
             document_id=document_id,
             document_ids=document_ids,
+            precision_mode=settings.rag_precision_mode,
+            vector_min_score=settings.rag_vector_min_score,
+            lexical_required_coverage=settings.rag_lexical_required_coverage,
+            per_document_cap=settings.rag_per_document_cap,
+            use_mmr=settings.rag_use_mmr,
+            mmr_lambda=settings.rag_mmr_lambda,
+            candidate_pool_size=settings.rag_candidate_pool_size,
         )
 
         if not results:
@@ -244,7 +251,8 @@ class RAGPipeline:
 
         # Step 2: Rerank
         if rerank:
-            results = reranker.rerank(query=query, results=results, top_k=top_k)
+            rerank_out = reranker.rerank(query=query, results=results, top_k=top_k)
+            results = rerank_out["results"]
         else:
             results = results[:top_k]
 
@@ -273,18 +281,25 @@ class RAGPipeline:
         Args:
             document_ids: Filter to only these documents (thread-scoped)
         """
-        results = await hybrid_retriever.retrieve(
+        results, _diag = await hybrid_retriever.retrieve(
             query=query,
             workspace_id=workspace_id,
             top_k=top_k * 3,
             document_ids=document_ids,
+            precision_mode=settings.rag_precision_mode,
+            vector_min_score=settings.rag_vector_min_score,
+            lexical_required_coverage=settings.rag_lexical_required_coverage,
+            per_document_cap=settings.rag_per_document_cap,
+            use_mmr=settings.rag_use_mmr,
+            mmr_lambda=settings.rag_mmr_lambda,
+            candidate_pool_size=settings.rag_candidate_pool_size,
         )
 
         if not results:
             return []
 
-        results = reranker.rerank(query=query, results=results, top_k=top_k)
-        return results
+        rerank_out = reranker.rerank(query=query, results=results, top_k=top_k)
+        return rerank_out["results"]
 
     async def distilled_query(
         self,

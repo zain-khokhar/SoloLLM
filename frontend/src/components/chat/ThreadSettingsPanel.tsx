@@ -13,6 +13,7 @@ import {
   Zap,
   HardDrive,
   Brain,
+  Crosshair,
 } from "lucide-react";
 import { ThreadSettings } from "@/types";
 import { getThreadSettings, updateThreadSettings } from "@/lib/api";
@@ -153,6 +154,117 @@ export default function ThreadSettingsPanel({
             </div>
           </section>
 
+          {/* RAG Precision */}
+          {settings.rag_enabled && (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Crosshair size={13} style={{ color: "var(--accent)" }} />
+                <span
+                  className="text-xs font-semibold"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  RAG Precision
+                </span>
+              </div>
+              <div
+                className="rounded-xl p-3 space-y-3"
+                style={{
+                  background: "var(--bg-primary)",
+                  border: "1px solid var(--border-color)",
+                }}
+              >
+                <div>
+                  <label
+                    className="text-[11px] font-medium block mb-1"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    Precision Mode
+                  </label>
+                  <select
+                    value={settings.rag_precision_mode ?? "legacy_rrf"}
+                    onChange={(e) =>
+                      updateField("rag_precision_mode", e.target.value)
+                    }
+                    className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{
+                      background: "var(--bg-secondary)",
+                      border: "1px solid var(--border-color)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    <option value="legacy_rrf">Legacy RRF (Reciprocal Rank Fusion)</option>
+                    <option value="precision_fusion">Precision Fusion (calibrated)</option>
+                  </select>
+                  <p
+                    className="text-[10px] mt-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {settings.rag_precision_mode === "precision_fusion"
+                      ? "Calibrated score fusion with threshold gates, MMR diversity, and per-doc caps"
+                      : "Classic hybrid retrieval using rank-based fusion"}
+                  </p>
+                </div>
+
+                {settings.rag_precision_mode === "precision_fusion" && (
+                  <>
+                    <NumberSetting
+                      label="Min Similarity Threshold"
+                      description="Minimum normalized vector similarity (below → rejected)"
+                      value={settings.rag_vector_min_score ?? 0.28}
+                      onChange={(v) => updateField("rag_vector_min_score", v)}
+                      min={0}
+                      max={1}
+                      step={0.02}
+                    />
+                    <NumberSetting
+                      label="Required Term Coverage"
+                      description="Minimum fraction of query terms in keyword results"
+                      value={settings.rag_lexical_required_coverage ?? 0.5}
+                      onChange={(v) => updateField("rag_lexical_required_coverage", v)}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                    />
+                    <NumberSetting
+                      label="Per-Document Cap"
+                      description="Max chunks from a single document (0 = unlimited)"
+                      value={settings.rag_per_document_cap ?? 2}
+                      onChange={(v) => updateField("rag_per_document_cap", v)}
+                      min={0}
+                      max={10}
+                    />
+                    <NumberSetting
+                      label="Candidate Pool Size"
+                      description="How many candidates to fetch from each source"
+                      value={settings.rag_candidate_pool_size ?? 80}
+                      onChange={(v) => updateField("rag_candidate_pool_size", v)}
+                      min={20}
+                      max={200}
+                      step={10}
+                    />
+                    <ToggleSetting
+                      label="MMR Diversity"
+                      description="Use Maximal Marginal Relevance for result diversity"
+                      value={settings.rag_use_mmr ?? true}
+                      onChange={(v) => updateField("rag_use_mmr", v)}
+                    />
+                    {settings.rag_use_mmr && (
+                      <NumberSetting
+                        label="MMR Lambda"
+                        description="Relevance vs diversity tradeoff (higher = more relevance)"
+                        value={settings.rag_mmr_lambda ?? 0.65}
+                        onChange={(v) => updateField("rag_mmr_lambda", v)}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* KV Cache Compression */}
           <section>
             <div className="flex items-center gap-2 mb-3">
@@ -292,7 +404,7 @@ export default function ThreadSettingsPanel({
               <NumberSetting
                 label="Max Output Tokens"
                 description="Maximum response length"
-                value={settings.max_tokens}
+                value={settings.max_tokens ?? 4096}
                 onChange={(v) => updateField("max_tokens", v)}
                 min={256}
                 max={16384}
@@ -301,7 +413,7 @@ export default function ThreadSettingsPanel({
               <NumberSetting
                 label="Temperature"
                 description="Creativity (0=focused, 1=creative)"
-                value={settings.temperature}
+                value={settings.temperature ?? 0.7}
                 onChange={(v) => updateField("temperature", v)}
                 min={0}
                 max={2}
