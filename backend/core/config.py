@@ -101,6 +101,13 @@ class Settings(BaseSettings):
         "web_search", "datetime", "rag_search", "knowledge_graph", "memory",
     ]
 
+    # Academic Auto-Generation
+    academic_enabled: bool = True
+    academic_data_dir: Path = data_dir / "academic_outputs"
+    academic_preprocessing_model: str = ""  # empty = use default_model
+    academic_generation_model: str = ""  # empty = use default_model
+    academic_max_concurrent_jobs: int = 2
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000

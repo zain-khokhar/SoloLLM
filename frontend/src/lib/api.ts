@@ -1218,3 +1218,205 @@ export async function deleteFinetunedModel(name: string): Promise<{ status: stri
     method: "DELETE",
   });
 }
+
+// ── Academic Auto-Generation API ─────────────────────────────
+
+import type {
+  AcademicCourse, AcademicReview, AcademicTopicScore, AcademicJob,
+  AcademicOutput, AcademicFeedback, AcademicOverviewStats,
+  CourseMetrics, ScoringWeights, BulkImportResult, ReviewIngestResult,
+  AcademicGenerateOptions,
+} from "@/types/academic";
+
+export async function academicBulkImport(files: File[]): Promise<BulkImportResult> {
+  const formData = new FormData();
+  files.forEach((f) => formData.append("files", f));
+  const res = await fetch(`${UPLOAD_API_BASE}/academic/courses/bulk-import`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function academicUploadPdf(file: File, courseCode: string): Promise<any> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("course_code", courseCode);
+  const res = await fetch(`${UPLOAD_API_BASE}/academic/courses/upload-pdf`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function academicListCourses(): Promise<{ courses: AcademicCourse[]; total: number }> {
+  return fetchJSON("/academic/courses");
+}
+
+export async function academicGetCourse(courseCode: string): Promise<any> {
+  return fetchJSON(`/academic/courses/${encodeURIComponent(courseCode)}`);
+}
+
+export async function academicUploadReviews(file: File, courseCode: string): Promise<ReviewIngestResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("course_code", courseCode);
+  const res = await fetch(`${UPLOAD_API_BASE}/academic/reviews/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function academicAddManualReview(
+  courseCode: string, reviewText: string, semester?: string
+): Promise<any> {
+  return fetchJSON("/academic/reviews/manual", {
+    method: "POST",
+    body: JSON.stringify({ course_code: courseCode, review_text: reviewText, semester: semester || "" }),
+  });
+}
+
+export async function academicListReviews(
+  courseCode: string, includeSpam?: boolean, limit?: number
+): Promise<{ course_code: string; reviews: AcademicReview[]; total: number }> {
+  const params = new URLSearchParams({ course_code: courseCode });
+  if (includeSpam) params.set("include_spam", "true");
+  if (limit) params.set("limit", limit.toString());
+  return fetchJSON(`/academic/reviews?${params}`);
+}
+
+export async function academicReprocessReviews(courseCode: string): Promise<any> {
+  return fetchJSON(`/academic/reviews/reprocess?course_code=${encodeURIComponent(courseCode)}`, {
+    method: "POST",
+  });
+}
+
+export async function academicGenerate(
+  courseCode: string, outputTypes: string[], options?: AcademicGenerateOptions
+): Promise<AcademicJob> {
+  return fetchJSON("/academic/generate", {
+    method: "POST",
+    body: JSON.stringify({ course_code: courseCode, output_types: outputTypes, ...(options || {}) }),
+  });
+}
+
+export async function academicBulkGenerate(
+  courseCodes: string[], outputTypes: string[], options?: AcademicGenerateOptions
+): Promise<{ jobs: any[]; total: number }> {
+  return fetchJSON("/academic/generate/bulk", {
+    method: "POST",
+    body: JSON.stringify({ course_codes: courseCodes, output_types: outputTypes, ...(options || {}) }),
+  });
+}
+
+export async function academicGetJob(jobId: string): Promise<AcademicJob> {
+  return fetchJSON(`/academic/jobs/${jobId}`);
+}
+
+export async function academicListJobs(
+  courseCode?: string, status?: string, limit?: number
+): Promise<{ jobs: AcademicJob[]; total: number }> {
+  const params = new URLSearchParams();
+  if (courseCode) params.set("course_code", courseCode);
+  if (status) params.set("status", status);
+  if (limit) params.set("limit", limit.toString());
+  return fetchJSON(`/academic/jobs?${params}`);
+}
+
+export async function academicRetryJob(jobId: string): Promise<any> {
+  return fetchJSON(`/academic/jobs/${jobId}/retry`, { method: "POST" });
+}
+
+export async function academicPauseJob(jobId: string): Promise<any> {
+  return fetchJSON(`/academic/jobs/${jobId}/pause`, { method: "POST" });
+}
+
+export async function academicResumeJob(jobId: string): Promise<any> {
+  return fetchJSON(`/academic/jobs/${jobId}/resume`, { method: "POST" });
+}
+
+export async function academicStopJob(jobId: string): Promise<any> {
+  return fetchJSON(`/academic/jobs/${jobId}/stop`, { method: "POST" });
+}
+
+export async function academicCancelJob(jobId: string): Promise<any> {
+  return fetchJSON(`/academic/jobs/${jobId}/cancel`, { method: "POST" });
+}
+
+export async function academicDeleteJob(jobId: string): Promise<any> {
+  return fetchJSON(`/academic/jobs/${jobId}`, { method: "DELETE" });
+}
+
+export async function academicGetJobPreview(jobId: string): Promise<any> {
+  return fetchJSON(`/academic/jobs/${jobId}/preview`);
+}
+
+export function academicPreviewDownloadUrl(jobId: string): string {
+  return `${UPLOAD_API_BASE}/academic/jobs/${jobId}/preview/download`;
+}
+
+export async function academicListOutputs(
+  courseCode?: string, outputType?: string, limit?: number
+): Promise<{ outputs: AcademicOutput[]; total: number }> {
+  const params = new URLSearchParams();
+  if (courseCode) params.set("course_code", courseCode);
+  if (outputType) params.set("output_type", outputType);
+  if (limit) params.set("limit", limit.toString());
+  return fetchJSON(`/academic/outputs?${params}`);
+}
+
+export function academicDownloadUrl(outputId: string): string {
+  return `${UPLOAD_API_BASE}/academic/outputs/${outputId}/download`;
+}
+
+export async function academicDeleteOutput(outputId: string): Promise<any> {
+  return fetchJSON(`/academic/outputs/${outputId}`, { method: "DELETE" });
+}
+
+export async function academicListGenerationModels(): Promise<ModelInfo[]> {
+  const data = await fetchJSON<{ models: ModelInfo[] }>("/academic/models");
+  return data.models;
+}
+
+export async function academicSubmitFeedback(
+  outputId: string, rating: number, comment?: string, topicAccuracy?: number
+): Promise<any> {
+  return fetchJSON(`/academic/outputs/${outputId}/feedback`, {
+    method: "POST",
+    body: JSON.stringify({ rating, comment: comment || "", topic_accuracy_pct: topicAccuracy }),
+  });
+}
+
+export async function academicGetOverviewMetrics(): Promise<AcademicOverviewStats> {
+  return fetchJSON("/academic/metrics/overview");
+}
+
+export async function academicGetCourseMetrics(courseCode: string): Promise<{
+  course_code: string; course_id: string; metrics: CourseMetrics;
+}> {
+  return fetchJSON(`/academic/metrics/course/${encodeURIComponent(courseCode)}`);
+}
+
+export async function academicGetScoringWeights(): Promise<{ weights: ScoringWeights }> {
+  return fetchJSON("/academic/scoring-weights");
+}
+
+export async function academicUpdateScoringWeights(weights: Partial<ScoringWeights>): Promise<{ weights: ScoringWeights }> {
+  return fetchJSON("/academic/scoring-weights", {
+    method: "PUT",
+    body: JSON.stringify(weights),
+  });
+}

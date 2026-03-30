@@ -16,6 +16,7 @@ import {
   ArrowDownUp,
   HardDrive,
   GraduationCap,
+  BookOpen,
 } from "lucide-react";
 import { Conversation } from "@/types";
 import { listConversations, deleteConversation } from "@/lib/api";
@@ -31,6 +32,7 @@ interface SidebarProps {
   onOpenExport: () => void;
   onOpenModels: () => void;
   onOpenTraining: () => void;
+  onOpenAcademic: () => void;
   refreshTrigger: number;
 }
 
@@ -45,6 +47,7 @@ export default function Sidebar({
   onOpenExport,
   onOpenModels,
   onOpenTraining,
+  onOpenAcademic,
   refreshTrigger,
 }: SidebarProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -219,6 +222,23 @@ export default function Sidebar({
           title="Self-Training"
         >
           <GraduationCap size={18} />
+        </button>
+
+        <button
+          onClick={onOpenAcademic}
+          className="p-2.5 rounded-xl transition-smooth"
+          style={{ color: "var(--text-muted)" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-hover)";
+            e.currentTarget.style.color = "var(--text-primary)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "var(--text-muted)";
+          }}
+          title="Academic Studio"
+        >
+          <BookOpen size={18} />
         </button>
 
         <button
@@ -508,6 +528,22 @@ export default function Sidebar({
         >
           <GraduationCap size={15} />
           Self-Training
+        </button>
+        <button
+          onClick={onOpenAcademic}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-smooth"
+          style={{ color: "var(--text-secondary)" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-hover)";
+            e.currentTarget.style.color = "var(--text-primary)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "var(--text-secondary)";
+          }}
+        >
+          <BookOpen size={15} />
+          Academic Studio
         </button>
         <button
           onClick={onOpenExport}

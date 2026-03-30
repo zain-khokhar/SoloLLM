@@ -1,0 +1,17 @@
+{
+  "job_id": "406769f2232b43c0bb05a8fb91fe84a8",
+  "course_code": "CS101",
+  "model": "deepseek-r1:1.5b",
+  "total_pages": 323,
+  "target_pages": 15,
+  "total_batches": 4,
+  "total_highlights": 3,
+  "total_spans_returned": 40,
+  "total_spans_matched": 0,
+  "total_spans_unmatched": 40,
+  "overall_match_rate": 0.0,
+  "total_retries": 0,
+  "failed_batches": 0,
+  "skipped_batches": 0,
+  "total_duration_seconds": 482.91
+}

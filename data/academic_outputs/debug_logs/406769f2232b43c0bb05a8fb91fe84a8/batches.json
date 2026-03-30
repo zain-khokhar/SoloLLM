@@ -1,0 +1,190 @@
+{
+  "job_id": "406769f2232b43c0bb05a8fb91fe84a8",
+  "course_code": "CS101",
+  "model": "deepseek-r1:1.5b",
+  "total_pages": 323,
+  "target_pages": 15,
+  "total_batches": 4,
+  "total_highlights": 3,
+  "total_spans_returned": 40,
+  "total_spans_matched": 0,
+  "total_spans_unmatched": 40,
+  "overall_match_rate": 0.0,
+  "total_retries": 0,
+  "failed_batches": 0,
+  "skipped_batches": 0,
+  "total_duration_seconds": 482.91,
+  "batches": [
+    {
+      "batch_index": 0,
+      "pages": [
+        1
+      ],
+      "actual_pages_processed": [
+        0
+      ],
+      "overflow_pages": [],
+      "prompt_chars": 10169,
+      "response_chars": 10194,
+      "spans_returned": 10,
+      "spans_matched": 0,
+      "spans_unmatched": 10,
+      "unmatched_spans": [
+        "First, looking at the review evidence provided, it seems like a bunch of topics related to CS101, which is an introducto",
+        "Page 6 discusses software basics, including compilers, operating systems, and programming languages. It also touches on ",
+        "Okay, so I need to help highlight the most exam-relevant text spans from the given pages using VU's handouts. Let me sta",
+        "Starting with Page 1, which is an introduction to computing. It mentions the course structure, topics like lecture 1, 2,",
+        "The current batch text includes several pages from the course. I need to go through each page and identify key points or",
+        "Moving to Page 2, it's about the web and related technologies. It discusses the World Wide Web, quantum computing, and m",
+        "Page 3 seems to be about the browser, URL, and what a web site is. It also touches on future trends in the web, like the",
+        "Page 4 covers various types of computers, including mainframe, servers, desktops, etc., and mentions some key hardware c",
+        "Looking at Page 5, it's about computer types again but with more specific details like processor speeds (100 MHz, 200 MH",
+        "Page 7 covers output devices like monitors, terminals, and scopes. It mentions modems for connecting to the web. This is"
+      ],
+      "match_rate": 0.0,
+      "page_highlight_counts": {},
+      "error": "",
+      "retry_used": false,
+      "retry_error": "",
+      "duration_seconds": 147.05
+    },
+    {
+      "batch_index": 1,
+      "pages": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "actual_pages_processed": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "overflow_pages": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "prompt_chars": 26179,
+      "response_chars": 7895,
+      "spans_returned": 10,
+      "spans_matched": 0,
+      "spans_unmatched": 10,
+      "unmatched_spans": [
+        "Programming Concepts: Variables, data types, operators, functions, control flow.",
+        "**Identify Key Concepts**: Break down each chapter's content into fundamental concepts relevant to CS101. For example:",
+        "To effectively design exam questions based on the provided outline, follow this structured approach:",
+        "JavaScript: Syntax, variables, loops, event handling, asynchronous programming.",
+        "Object-Oriented Programming: Classes, objects, inheritance, encapsulation.",
+        "Data Structures: Arrays, objects, stacks, queues, trees, graphs.",
+        "Spreadsheets: Business models, Goal Seek, sensitivity analysis.",
+        "Web Design Heuristics: Performance, readability, navigation, UX, accessibility.",
+        "**Question Types**: Prepare a mix of question types to assess different skills:",
+        "Web Development: HTML, CSS, JavaScript, responsive design."
+      ],
+      "match_rate": 0.0,
+      "page_highlight_counts": {},
+      "error": "",
+      "retry_used": false,
+      "retry_error": "",
+      "duration_seconds": 104.05
+    },
+    {
+      "batch_index": 2,
+      "pages": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "actual_pages_processed": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "overflow_pages": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "prompt_chars": 19804,
+      "response_chars": 9781,
+      "spans_returned": 10,
+      "spans_matched": 0,
+      "spans_unmatched": 10,
+      "unmatched_spans": [
+        "Content:** Introduction to algorithms, flowcharts, JavaScript basics.",
+        "### **Week 3: Algorithms & Flowcharts",
+        "Course Outline: CS101 Introduction to Computing",
+        "This comprehensive 28-week course is designed to provide a thorough understanding of computing fundamentals, from founda",
+        "Key Concepts:** Evolution of computing, computer organization, microprocessors, binary numbers, and number representatio",
+        "Overview:** Charles Babbage's work on the Analytical Engine and Ada Lovelace's contributions.",
+        "Focus:** Building a PC, understanding microprocessors, logic gates, and operating systems.",
+        "Learning Outcomes:** Basic architecture and system components.",
+        "### **Week 1: Introduction",
+        "### **Week 2: Computer Organization"
+      ],
+      "match_rate": 0.0,
+      "page_highlight_counts": {},
+      "error": "",
+      "retry_used": false,
+      "retry_error": "",
+      "duration_seconds": 144.92
+    },
+    {
+      "batch_index": 3,
+      "pages": [
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "actual_pages_processed": [
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "overflow_pages": [
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "prompt_chars": 16512,
+      "response_chars": 4463,
+      "spans_returned": 10,
+      "spans_matched": 0,
+      "spans_unmatched": 10,
+      "unmatched_spans": [
+        "Here is a structured summary of each exam question related to computer science, organized by question:",
+        "Development Timeline**: The Altair 8800 personal computer marketed without electrical background in 1975.",
+        "Development Timeline**: The Whirlwind stored program machine from Bell Labs in the late 40s.",
+        "Development Timeline**: The Intel 4004 microprocessor introduced in 1971.",
+        "Development Timeline**: The UNIVAC I general purpose computer introduced in 1951.",
+        "**Question 2.1**:",
+        "**Question 2.2**:",
+        "**Question 2.3**:",
+        "**Question 2.4**:",
+        "**Question 2.5**:"
+      ],
+      "match_rate": 0.0,
+      "page_highlight_counts": {},
+      "error": "",
+      "retry_used": false,
+      "retry_error": "",
+      "duration_seconds": 86.89
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import ExportImportView from "@/components/export/ExportImportView";
 import SetupWizard from "@/components/setup/SetupWizard";
 import ModelPicker from "@/components/setup/ModelPicker";
 import TrainingView from "@/components/training/TrainingView";
+import AcademicStudio from "@/components/academic/AcademicStudio";
 import { streamChat, streamContinuation, streamWebSearch, getConversation, getThread, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels, uploadDocument, attachDocumentToThread, getThreadDocuments, listDocuments, detachDocumentFromThread } from "@/lib/api";
 import { DistillationMeta, Thread, DocumentInfo } from "@/types";
 import {
@@ -47,7 +48,7 @@ interface TruncationInfo {
 
 export default function Home() {
   const [showSetup, setShowSetup] = useState<boolean | null>(null); // null = checking
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "graph" | "agent" | "dashboard" | "export" | "models" | "training">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "graph" | "agent" | "dashboard" | "export" | "models" | "training" | "academic">("chat");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -514,6 +515,7 @@ export default function Home() {
         onOpenExport={() => setCurrentView("export")}
         onOpenModels={() => setCurrentView("models")}
         onOpenTraining={() => setCurrentView("training")}
+        onOpenAcademic={() => setCurrentView("academic")}
         refreshTrigger={refreshSidebar}
       />
 
@@ -532,6 +534,10 @@ export default function Home() {
         />
       ) : currentView === "training" ? (
         <TrainingView onBack={() => setCurrentView("chat")} selectedModel={selectedModel} onSelectModel={setSelectedModel} />
+      ) : currentView === "academic" ? (
+        <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg-primary)" }}>
+          <AcademicStudio />
+        </div>
       ) : currentView === "models" ? (
         <div className="flex-1 flex flex-col h-screen" style={{ background: "var(--bg-primary)" }}>
           <div

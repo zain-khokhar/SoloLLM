@@ -168,6 +168,148 @@ CREATE TABLE IF NOT EXISTS finetuned_models (
     registered_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_finetuned_models_name ON finetuned_models(name);
+
+-- ── Academic Auto-Generation Tables ────────────────────────
+CREATE TABLE IF NOT EXISTS academic_courses (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    title TEXT DEFAULT '',
+    department TEXT DEFAULT '',
+    total_lectures INTEGER DEFAULT 0,
+    workspace_id TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_acad_courses_code ON academic_courses(code);
+
+CREATE TABLE IF NOT EXISTS academic_course_aliases (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    alias TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (course_id) REFERENCES academic_courses(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_acad_aliases_course ON academic_course_aliases(course_id);
+
+CREATE TABLE IF NOT EXISTS academic_review_sources (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    file_type TEXT DEFAULT 'csv',
+    review_count INTEGER DEFAULT 0,
+    uploaded_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS academic_student_reviews (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    source_id TEXT,
+    review_text TEXT NOT NULL,
+    reviewer_token TEXT DEFAULT '',
+    semester TEXT DEFAULT '',
+    urgency_score REAL DEFAULT 0.0,
+    sentiment_score REAL DEFAULT 0.0,
+    is_duplicate INTEGER DEFAULT 0,
+    is_spam INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (course_id) REFERENCES academic_courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_id) REFERENCES academic_review_sources(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_acad_reviews_course ON academic_student_reviews(course_id);
+CREATE INDEX IF NOT EXISTS idx_acad_reviews_source ON academic_student_reviews(source_id);
+
+CREATE TABLE IF NOT EXISTS academic_review_topic_labels (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL,
+    course_id TEXT NOT NULL,
+    topic_name TEXT NOT NULL,
+    confidence REAL DEFAULT 0.0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (review_id) REFERENCES academic_student_reviews(id) ON DELETE CASCADE,
+    FOREIGN KEY (course_id) REFERENCES academic_courses(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_acad_topic_labels_review ON academic_review_topic_labels(review_id);
+CREATE INDEX IF NOT EXISTS idx_acad_topic_labels_course ON academic_review_topic_labels(course_id);
+
+CREATE TABLE IF NOT EXISTS academic_topic_scores (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    topic_name TEXT NOT NULL,
+    exam_probability REAL DEFAULT 0.0,
+    weight_bucket TEXT DEFAULT 'low',
+    midterm_relevance REAL DEFAULT 0.0,
+    final_relevance REAL DEFAULT 0.0,
+    review_frequency REAL DEFAULT 0.0,
+    urgency_signal REAL DEFAULT 0.0,
+    consensus_score REAL DEFAULT 0.0,
+    syllabus_importance REAL DEFAULT 0.0,
+    recency_weight REAL DEFAULT 0.0,
+    llm_confidence REAL DEFAULT 0.0,
+    evidence_json TEXT DEFAULT '[]',
+    scored_at TEXT NOT NULL,
+    FOREIGN KEY (course_id) REFERENCES academic_courses(id) ON DELETE CASCADE,
+    UNIQUE(course_id, topic_name)
+);
+CREATE INDEX IF NOT EXISTS idx_acad_scores_course ON academic_topic_scores(course_id);
+
+CREATE TABLE IF NOT EXISTS academic_generation_jobs (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    job_type TEXT NOT NULL DEFAULT 'full',
+    output_types TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'pending',
+    progress REAL DEFAULT 0.0,
+    current_stage TEXT DEFAULT '',
+    stages_completed TEXT DEFAULT '[]',
+    checkpoint_json TEXT DEFAULT '{}',
+    error TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (course_id) REFERENCES academic_courses(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_acad_jobs_course ON academic_generation_jobs(course_id);
+CREATE INDEX IF NOT EXISTS idx_acad_jobs_status ON academic_generation_jobs(status);
+
+CREATE TABLE IF NOT EXISTS academic_generation_outputs (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    output_type TEXT NOT NULL,
+    version INTEGER DEFAULT 1,
+    file_path TEXT NOT NULL,
+    file_size INTEGER DEFAULT 0,
+    topic_count INTEGER DEFAULT 0,
+    generation_params TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (course_id) REFERENCES academic_courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (job_id) REFERENCES academic_generation_jobs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_acad_outputs_course ON academic_generation_outputs(course_id);
+CREATE INDEX IF NOT EXISTS idx_acad_outputs_job ON academic_generation_outputs(job_id);
+
+CREATE TABLE IF NOT EXISTS academic_output_metrics (
+    id TEXT PRIMARY KEY,
+    output_id TEXT NOT NULL,
+    topic_hit_rate REAL DEFAULT 0.0,
+    mcq_quality_rate REAL DEFAULT 0.0,
+    hallucination_rate REAL DEFAULT 0.0,
+    generation_stability REAL DEFAULT 0.0,
+    computed_at TEXT NOT NULL,
+    FOREIGN KEY (output_id) REFERENCES academic_generation_outputs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_acad_metrics_output ON academic_output_metrics(output_id);
+
+CREATE TABLE IF NOT EXISTS academic_output_feedback (
+    id TEXT PRIMARY KEY,
+    output_id TEXT NOT NULL,
+    rating INTEGER DEFAULT 0,
+    comment TEXT DEFAULT '',
+    topic_accuracy_pct REAL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (output_id) REFERENCES academic_generation_outputs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_acad_feedback_output ON academic_output_feedback(output_id);
 """
 
 
@@ -1052,3 +1194,527 @@ async def delete_finetuned_model(name: str) -> bool:
         return cursor.rowcount > 0
     finally:
         await db.close()
+
+
+# ── Academic: Courses ───────────────────────────────────────
+
+async def acad_create_course(code: str, title: str = "", department: str = "",
+                             total_lectures: int = 0, workspace_id: str = "",
+                             metadata: dict | None = None) -> dict:
+    db = await get_db()
+    try:
+        cid = new_id()
+        now = _now()
+        ws = workspace_id or f"academic_{code.upper().replace(' ', '').replace('-', '')}"
+        await db.execute(
+            """INSERT INTO academic_courses
+               (id, code, title, department, total_lectures, workspace_id, metadata, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (cid, code.upper().replace(" ", "").replace("-", ""), title, department,
+             total_lectures, ws, json.dumps(metadata or {}), now, now),
+        )
+        await db.commit()
+        return {"id": cid, "code": code.upper().replace(" ", "").replace("-", ""),
+                "title": title, "department": department, "workspace_id": ws,
+                "total_lectures": total_lectures, "created_at": now, "updated_at": now}
+    finally:
+        await db.close()
+
+
+async def acad_get_course(course_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM academic_courses WHERE id = ?", (course_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def acad_get_course_by_code(code: str) -> dict | None:
+    normalized = code.upper().replace(" ", "").replace("-", "")
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM academic_courses WHERE code = ?", (normalized,))
+        row = await cursor.fetchone()
+        if row:
+            return dict(row)
+        # Try alias lookup
+        cursor = await db.execute(
+            """SELECT ac.* FROM academic_courses ac
+               JOIN academic_course_aliases aca ON aca.course_id = ac.id
+               WHERE aca.alias = ?""", (normalized,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def acad_list_courses() -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM academic_courses ORDER BY code ASC")
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def acad_update_course(course_id: str, **kwargs) -> bool:
+    db = await get_db()
+    try:
+        allowed = {"title", "department", "total_lectures", "metadata"}
+        fields = {k: v for k, v in kwargs.items() if k in allowed}
+        if not fields:
+            return False
+        if "metadata" in fields and isinstance(fields["metadata"], dict):
+            fields["metadata"] = json.dumps(fields["metadata"])
+        fields["updated_at"] = _now()
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        await db.execute(
+            f"UPDATE academic_courses SET {set_clause} WHERE id = ?",
+            (*fields.values(), course_id),
+        )
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def acad_delete_course(course_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute("DELETE FROM academic_courses WHERE id = ?", (course_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def acad_add_course_alias(course_id: str, alias: str) -> dict:
+    db = await get_db()
+    try:
+        aid = new_id()
+        now = _now()
+        normalized = alias.upper().replace(" ", "").replace("-", "")
+        await db.execute(
+            "INSERT INTO academic_course_aliases (id, course_id, alias, created_at) VALUES (?, ?, ?, ?)",
+            (aid, course_id, normalized, now),
+        )
+        await db.commit()
+        return {"id": aid, "course_id": course_id, "alias": normalized}
+    finally:
+        await db.close()
+
+
+# ── Academic: Reviews ───────────────────────────────────────
+
+async def acad_create_review_source(filename: str, file_type: str = "csv",
+                                     review_count: int = 0) -> dict:
+    db = await get_db()
+    try:
+        sid = new_id()
+        now = _now()
+        await db.execute(
+            "INSERT INTO academic_review_sources (id, filename, file_type, review_count, uploaded_at) VALUES (?, ?, ?, ?, ?)",
+            (sid, filename, file_type, review_count, now),
+        )
+        await db.commit()
+        return {"id": sid, "filename": filename, "file_type": file_type,
+                "review_count": review_count, "uploaded_at": now}
+    finally:
+        await db.close()
+
+
+async def acad_add_review(course_id: str, review_text: str, source_id: str | None = None,
+                           reviewer_token: str = "", semester: str = "") -> dict:
+    db = await get_db()
+    try:
+        rid = new_id()
+        now = _now()
+        await db.execute(
+            """INSERT INTO academic_student_reviews
+               (id, course_id, source_id, review_text, reviewer_token, semester, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (rid, course_id, source_id, review_text, reviewer_token, semester, now),
+        )
+        await db.commit()
+        return {"id": rid, "course_id": course_id, "review_text": review_text,
+                "semester": semester, "created_at": now}
+    finally:
+        await db.close()
+
+
+async def acad_list_reviews(course_id: str, include_spam: bool = False,
+                             limit: int = 200) -> list[dict]:
+    db = await get_db()
+    try:
+        if include_spam:
+            cursor = await db.execute(
+                "SELECT * FROM academic_student_reviews WHERE course_id = ? ORDER BY created_at DESC LIMIT ?",
+                (course_id, limit),
+            )
+        else:
+            cursor = await db.execute(
+                """SELECT * FROM academic_student_reviews
+                   WHERE course_id = ? AND is_spam = 0 AND is_duplicate = 0
+                   ORDER BY created_at DESC LIMIT ?""",
+                (course_id, limit),
+            )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def acad_update_review_flags(review_id: str, **kwargs) -> bool:
+    db = await get_db()
+    try:
+        allowed = {"urgency_score", "sentiment_score", "is_duplicate", "is_spam"}
+        fields = {k: v for k, v in kwargs.items() if k in allowed}
+        if not fields:
+            return False
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        await db.execute(
+            f"UPDATE academic_student_reviews SET {set_clause} WHERE id = ?",
+            (*fields.values(), review_id),
+        )
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def acad_get_review_count(course_id: str) -> int:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT COUNT(*) as cnt FROM academic_student_reviews WHERE course_id = ? AND is_spam = 0",
+            (course_id,),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+    finally:
+        await db.close()
+
+
+# ── Academic: Topic Scores ──────────────────────────────────
+
+async def acad_upsert_topic_score(course_id: str, topic_name: str, **kwargs) -> dict:
+    db = await get_db()
+    try:
+        sid = new_id()
+        now = _now()
+        await db.execute(
+            """INSERT INTO academic_topic_scores
+               (id, course_id, topic_name, exam_probability, weight_bucket,
+                midterm_relevance, final_relevance, review_frequency, urgency_signal,
+                consensus_score, syllabus_importance, recency_weight, llm_confidence,
+                evidence_json, scored_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(course_id, topic_name) DO UPDATE SET
+                exam_probability=?, weight_bucket=?, midterm_relevance=?, final_relevance=?,
+                review_frequency=?, urgency_signal=?, consensus_score=?, syllabus_importance=?,
+                recency_weight=?, llm_confidence=?, evidence_json=?, scored_at=?""",
+            (sid, course_id, topic_name, kwargs.get("exam_probability", 0.0),
+             kwargs.get("weight_bucket", "low"), kwargs.get("midterm_relevance", 0.0),
+             kwargs.get("final_relevance", 0.0), kwargs.get("review_frequency", 0.0),
+             kwargs.get("urgency_signal", 0.0), kwargs.get("consensus_score", 0.0),
+             kwargs.get("syllabus_importance", 0.0), kwargs.get("recency_weight", 0.0),
+             kwargs.get("llm_confidence", 0.0), json.dumps(kwargs.get("evidence", [])), now,
+             # ON CONFLICT update values:
+             kwargs.get("exam_probability", 0.0), kwargs.get("weight_bucket", "low"),
+             kwargs.get("midterm_relevance", 0.0), kwargs.get("final_relevance", 0.0),
+             kwargs.get("review_frequency", 0.0), kwargs.get("urgency_signal", 0.0),
+             kwargs.get("consensus_score", 0.0), kwargs.get("syllabus_importance", 0.0),
+             kwargs.get("recency_weight", 0.0), kwargs.get("llm_confidence", 0.0),
+             json.dumps(kwargs.get("evidence", [])), now),
+        )
+        await db.commit()
+        return {"course_id": course_id, "topic_name": topic_name,
+                "exam_probability": kwargs.get("exam_probability", 0.0), "scored_at": now}
+    finally:
+        await db.close()
+
+
+async def acad_get_topic_scores(course_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM academic_topic_scores WHERE course_id = ? ORDER BY exam_probability DESC",
+            (course_id,),
+        )
+        rows = await cursor.fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            if isinstance(d.get("evidence_json"), str):
+                try:
+                    d["evidence"] = json.loads(d["evidence_json"])
+                except Exception:
+                    d["evidence"] = []
+            results.append(d)
+        return results
+    finally:
+        await db.close()
+
+
+# ── Academic: Generation Jobs ───────────────────────────────
+
+async def acad_create_job(course_id: str, job_type: str = "full",
+                           output_types: list[str] | None = None) -> dict:
+    db = await get_db()
+    try:
+        jid = new_id()
+        now = _now()
+        await db.execute(
+            """INSERT INTO academic_generation_jobs
+               (id, course_id, job_type, output_types, status, created_at)
+               VALUES (?, ?, ?, ?, 'pending', ?)""",
+            (jid, course_id, job_type, json.dumps(output_types or []), now),
+        )
+        await db.commit()
+        return {"id": jid, "course_id": course_id, "job_type": job_type,
+                "output_types": output_types or [], "status": "pending", "created_at": now}
+    finally:
+        await db.close()
+
+
+async def acad_update_job(job_id: str, **kwargs) -> bool:
+    db = await get_db()
+    try:
+        allowed = {"status", "progress", "current_stage", "stages_completed",
+                    "checkpoint_json", "error", "started_at", "completed_at"}
+        fields = {k: v for k, v in kwargs.items() if k in allowed}
+        if not fields:
+            return False
+        if "stages_completed" in fields and isinstance(fields["stages_completed"], list):
+            fields["stages_completed"] = json.dumps(fields["stages_completed"])
+        if "checkpoint_json" in fields and isinstance(fields["checkpoint_json"], dict):
+            fields["checkpoint_json"] = json.dumps(fields["checkpoint_json"])
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        await db.execute(
+            f"UPDATE academic_generation_jobs SET {set_clause} WHERE id = ?",
+            (*fields.values(), job_id),
+        )
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def acad_get_job(job_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM academic_generation_jobs WHERE id = ?", (job_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        for json_field in ("output_types", "stages_completed"):
+            if isinstance(d.get(json_field), str):
+                try:
+                    d[json_field] = json.loads(d[json_field])
+                except Exception:
+                    d[json_field] = []
+        if isinstance(d.get("checkpoint_json"), str):
+            try:
+                d["checkpoint_json"] = json.loads(d["checkpoint_json"])
+            except Exception:
+                d["checkpoint_json"] = {}
+        return d
+    finally:
+        await db.close()
+
+
+async def acad_list_jobs(course_id: str | None = None, status: str | None = None,
+                          limit: int = 50) -> list[dict]:
+    db = await get_db()
+    try:
+        sql = "SELECT * FROM academic_generation_jobs WHERE 1=1"
+        params: list = []
+        if course_id:
+            sql += " AND course_id = ?"
+            params.append(course_id)
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        cursor = await db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            for json_field in ("output_types", "stages_completed"):
+                if isinstance(d.get(json_field), str):
+                    try:
+                        d[json_field] = json.loads(d[json_field])
+                    except Exception:
+                        d[json_field] = []
+            if isinstance(d.get("checkpoint_json"), str):
+                try:
+                    d["checkpoint_json"] = json.loads(d["checkpoint_json"])
+                except Exception:
+                    d["checkpoint_json"] = {}
+            results.append(d)
+        return results
+    finally:
+        await db.close()
+
+
+async def acad_delete_job(job_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute("DELETE FROM academic_generation_jobs WHERE id = ?", (job_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+# ── Academic: Outputs ───────────────────────────────────────
+
+async def acad_create_output(course_id: str, job_id: str, output_type: str,
+                              file_path: str, file_size: int = 0,
+                              topic_count: int = 0, version: int = 1,
+                              generation_params: dict | None = None) -> dict:
+    db = await get_db()
+    try:
+        oid = new_id()
+        now = _now()
+        await db.execute(
+            """INSERT INTO academic_generation_outputs
+               (id, course_id, job_id, output_type, version, file_path, file_size,
+                topic_count, generation_params, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (oid, course_id, job_id, output_type, version, file_path, file_size,
+             topic_count, json.dumps(generation_params or {}), now),
+        )
+        await db.commit()
+        return {"id": oid, "course_id": course_id, "output_type": output_type,
+                "version": version, "file_path": file_path, "created_at": now}
+    finally:
+        await db.close()
+
+
+async def acad_list_outputs(course_id: str | None = None, output_type: str | None = None,
+                             limit: int = 100) -> list[dict]:
+    db = await get_db()
+    try:
+        sql = "SELECT * FROM academic_generation_outputs WHERE 1=1"
+        params: list = []
+        if course_id:
+            sql += " AND course_id = ?"
+            params.append(course_id)
+        if output_type:
+            sql += " AND output_type = ?"
+            params.append(output_type)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        cursor = await db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            if isinstance(d.get("generation_params"), str):
+                try:
+                    d["generation_params"] = json.loads(d["generation_params"])
+                except Exception:
+                    d["generation_params"] = {}
+            results.append(d)
+        return results
+    finally:
+        await db.close()
+
+
+async def acad_get_output(output_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM academic_generation_outputs WHERE id = ?", (output_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if isinstance(d.get("generation_params"), str):
+            try:
+                d["generation_params"] = json.loads(d["generation_params"])
+            except Exception:
+                d["generation_params"] = {}
+        return d
+    finally:
+        await db.close()
+
+
+async def acad_delete_output(output_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute("DELETE FROM academic_generation_outputs WHERE id = ?", (output_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+# ── Academic: Feedback ──────────────────────────────────────
+
+async def acad_add_feedback(output_id: str, rating: int = 0, comment: str = "",
+                             topic_accuracy_pct: float | None = None) -> dict:
+    db = await get_db()
+    try:
+        fid = new_id()
+        now = _now()
+        await db.execute(
+            """INSERT INTO academic_output_feedback
+               (id, output_id, rating, comment, topic_accuracy_pct, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (fid, output_id, rating, comment, topic_accuracy_pct, now),
+        )
+        await db.commit()
+        return {"id": fid, "output_id": output_id, "rating": rating, "created_at": now}
+    finally:
+        await db.close()
+
+
+async def acad_get_feedback(output_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM academic_output_feedback WHERE output_id = ? ORDER BY created_at DESC",
+            (output_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+# ── Academic: Metrics Overview ──────────────────────────────
+
+async def acad_get_overview_stats() -> dict:
+    """Get aggregate stats across all academic data."""
+    db = await get_db()
+    try:
+        c1 = await db.execute("SELECT COUNT(*) as cnt FROM academic_courses")
+        r1 = await c1.fetchone()
+        c2 = await db.execute("SELECT COUNT(*) as cnt FROM academic_student_reviews WHERE is_spam = 0")
+        r2 = await c2.fetchone()
+        c3 = await db.execute("SELECT COUNT(*) as cnt FROM academic_generation_jobs WHERE status = 'running'")
+        r3 = await c3.fetchone()
+        c4 = await db.execute("SELECT COUNT(*) as cnt FROM academic_generation_jobs WHERE status = 'completed'")
+        r4 = await c4.fetchone()
+        c5 = await db.execute("SELECT COUNT(*) as cnt FROM academic_generation_jobs WHERE status = 'failed'")
+        r5 = await c5.fetchone()
+        c6 = await db.execute("SELECT COUNT(*) as cnt FROM academic_generation_outputs")
+        r6 = await c6.fetchone()
+        return {
+            "total_courses": r1["cnt"] if r1 else 0,
+            "total_reviews": r2["cnt"] if r2 else 0,
+            "active_jobs": r3["cnt"] if r3 else 0,
+            "completed_jobs": r4["cnt"] if r4 else 0,
+            "failed_jobs": r5["cnt"] if r5 else 0,
+            "total_outputs": r6["cnt"] if r6 else 0,
+        }
+    finally:
+        await db.close()
+
