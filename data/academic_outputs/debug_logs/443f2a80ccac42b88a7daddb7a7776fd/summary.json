@@ -1,0 +1,17 @@
+{
+  "job_id": "443f2a80ccac42b88a7daddb7a7776fd",
+  "course_code": "CS101",
+  "model": "phi3:mini",
+  "total_pages": 323,
+  "target_pages": 15,
+  "total_batches": 4,
+  "total_highlights": 1,
+  "total_spans_returned": 1,
+  "total_spans_matched": 0,
+  "total_spans_unmatched": 1,
+  "overall_match_rate": 0.0,
+  "total_retries": 0,
+  "failed_batches": 0,
+  "skipped_batches": 0,
+  "total_duration_seconds": 197.94
+}

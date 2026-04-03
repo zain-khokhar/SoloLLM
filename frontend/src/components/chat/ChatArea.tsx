@@ -14,7 +14,6 @@ import {
   GitBranch,
 } from "lucide-react";
 import MessageBubble from "./MessageBubble";
-import ContinuationBanner from "./ContinuationBanner";
 import { DistillationMeta } from "@/types";
 
 interface ChatMessage {
@@ -23,20 +22,10 @@ interface ChatMessage {
   content: string;
 }
 
-interface TruncationInfo {
-  message_id: string;
-  conversation_id: string;
-  reason: string;
-  confidence: number;
-}
-
 interface ChatAreaProps {
   messages: ChatMessage[];
   isStreaming: boolean;
   streamingContent: string;
-  truncation: TruncationInfo | null;
-  onContinue: () => void;
-  isContinuing: boolean;
   distillationMeta?: DistillationMeta | null;
 }
 
@@ -44,9 +33,6 @@ export default function ChatArea({
   messages,
   isStreaming,
   streamingContent,
-  truncation,
-  onContinue,
-  isContinuing,
   distillationMeta,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -97,8 +83,8 @@ export default function ChatArea({
             {[
               {
                 icon: Zap,
-                label: "Auto-Continue",
-                desc: "Never lose a response to token limits",
+                label: "Fast & Local",
+                desc: "Runs entirely on your hardware",
                 delay: "0.1s",
               },
               {
@@ -179,16 +165,6 @@ export default function ChatArea({
             content={streamingContent}
             isStreaming={true}
             index={messages.length}
-          />
-        )}
-
-        {/* Continuation banner */}
-        {truncation && !isStreaming && (
-          <ContinuationBanner
-            reason={truncation.reason}
-            confidence={truncation.confidence}
-            onContinue={onContinue}
-            isLoading={isContinuing}
           />
         )}
 

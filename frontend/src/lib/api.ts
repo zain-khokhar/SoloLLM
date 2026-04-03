@@ -1420,3 +1420,237 @@ export async function academicUpdateScoringWeights(weights: Partial<ScoringWeigh
     body: JSON.stringify(weights),
   });
 }
+
+// ── Quantize API ─────────────────────────────────────────────
+
+export interface QuantizeToolsStatus {
+  ready: boolean;
+  tools_path: string;
+  has_quantize: boolean;
+  has_convert: boolean;
+}
+
+export interface QuantType {
+  description: string;
+  size_ratio: number;
+  quality_note: string;
+  bits_per_weight: number;
+}
+
+export interface QuantizeJob {
+  id: string;
+  status: "pending" | "running" | "complete" | "error" | "cancelled";
+  source_type: "local_gguf" | "huggingface";
+  source: string;
+  quant_level: string;
+  output_name: string;
+  import_to_ollama: boolean;
+  progress: number;
+  stage: string;
+  message: string;
+  error: string | null;
+  output_path: string | null;
+  output_size: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export async function getQuantizeToolsStatus(): Promise<QuantizeToolsStatus> {
+  return fetchJSON("/quantize/tools-status");
+}
+
+export async function getQuantTypes(): Promise<Record<string, QuantType>> {
+  return fetchJSON("/quantize/quant-types");
+}
+
+export async function startQuantize(params: {
+  source_type: "local_gguf" | "huggingface";
+  source: string;
+  quant_level: string;
+  output_name: string;
+  import_to_ollama: boolean;
+}): Promise<{ job_id: string; job: QuantizeJob }> {
+  return fetchJSON("/quantize/start", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export async function listQuantizeJobs(): Promise<QuantizeJob[]> {
+  return fetchJSON("/quantize/jobs");
+}
+
+export async function getQuantizeJob(jobId: string): Promise<QuantizeJob> {
+  return fetchJSON(`/quantize/jobs/${jobId}`);
+}
+
+export async function cancelQuantizeJob(jobId: string): Promise<{ message: string }> {
+  return fetchJSON(`/quantize/jobs/${jobId}/cancel`, { method: "POST" });
+}
+
+export async function importQuantizeToOllama(jobId: string): Promise<{ message: string }> {
+  return fetchJSON(`/quantize/import-ollama/${jobId}`, { method: "POST" });
+}
+
+export async function deleteQuantizeJob(jobId: string): Promise<{ message: string }> {
+  return fetchJSON(`/quantize/jobs/${jobId}`, { method: "DELETE" });
+}
+
+export async function importGGUFDirect(params: {
+  gguf_path: string;
+  model_name: string;
+}): Promise<{ model_name: string; gguf_path: string; size: number }> {
+  return fetchJSON("/quantize/import-gguf", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export async function uploadGGUF(
+  file: File,
+  modelName?: string,
+): Promise<{ model_name: string; gguf_path: string; size: number }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (modelName) formData.append("model_name", modelName);
+
+  const res = await fetch(`${UPLOAD_API_BASE}/quantize/upload-gguf`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.detail || `Upload failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export function streamQuantizeSetup(
+  callbacks: {
+    onProgress: (data: { stage: string; message: string; percent: number; downloaded_bytes?: number; total_bytes?: number }) => void;
+    onDone: () => void;
+    onError: (error: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}/quantize/setup-tools`, {
+    method: "POST",
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        callbacks.onError(err.detail || `Request failed: ${res.status}`);
+        return;
+      }
+      const reader = res.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr);
+              if (eventType === "progress") {
+                callbacks.onProgress(data);
+              } else if (eventType === "done") {
+                callbacks.onDone();
+              } else if (eventType === "error") {
+                callbacks.onError(data.message || "Unknown error");
+              }
+            } catch {
+              // skip
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError(err.message);
+      }
+    });
+
+  return controller;
+}
+
+export function streamQuantizeJob(
+  jobId: string,
+  callbacks: {
+    onStatus: (job: QuantizeJob) => void;
+    onDone: () => void;
+    onError: (error: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}/quantize/jobs/${jobId}/stream`, {
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        callbacks.onError(err.detail || `Request failed: ${res.status}`);
+        return;
+      }
+      const reader = res.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr);
+              if (eventType === "status") {
+                callbacks.onStatus(data);
+              } else if (eventType === "done") {
+                callbacks.onDone();
+              } else if (eventType === "error") {
+                callbacks.onError(data.message || "Unknown error");
+              }
+            } catch {
+              // skip
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError(err.message);
+      }
+    });
+
+  return controller;
+}

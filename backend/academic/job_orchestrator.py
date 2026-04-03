@@ -343,6 +343,8 @@ class JobOrchestrator:
                         "total_spans_returned": render_out.get("total_spans_returned", 0),
                         "debug_log_path": render_out.get("debug_log_path", ""),
                     }
+                    if render_out.get("model_warning"):
+                        checkpoint_after_highlights["model_warning"] = render_out["model_warning"]
                     await acad_update_job(job_id, checkpoint_json=checkpoint_after_highlights)
                 elif output_type in ("midterm_notes", "final_notes"):
                     items = [{"topic_name": i.topic_name, "content": i.content}

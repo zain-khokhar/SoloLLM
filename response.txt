@@ -1,460 +1,775 @@
 Live Generation Logs
-Job: 406769f2232b43c0bb05a8fb91fe84a8Status: completedStage: done
+Job: 45dd8687468947dca7bbf8f2a65d05d1Status: completedStage: done
 Request sent to backend:
 {
   "course_code": "CS101",
   "output_types": [
     "highlighted_handout"
   ],
-  "generation_model": "deepseek-r1:1.5b",
+  "generation_model": "qwen2.5:0.5b",
   "batch_pages": 5,
-  "max_batch_chars": 7000,
+  "max_batch_chars": 9000,
   "max_review_evidence_chars": 2500,
-  "max_spans_per_batch": 10,
+  "max_spans_per_batch": 25,
   "syllabus_scope": "midterm",
   "split_mode": "manual",
   "manual_midterm_end_page": 15
 }
 AI request/response stream:
-#1 • highlighted_handout • batch_pages_1 • deepseek-r1:1.5b
+#1 • highlighted_handout • batch_pages_1 • qwen2.5:0.5b
 Request sent to AI:
-Identify exam-important text spans in the pages below.
-Use the REVIEW_EVIDENCE to prioritise content students reported as appearing in past exams.
+Extract exam-important text SECTIONS from the pages below for yellow highlighting.
 
-Rules reminder:
-- Return ONLY exact text copied from CURRENT_BATCH_TEXT
-- No paraphrase, no summaries, no single words
-- Each span must be a complete logical unit (definition, formula, rule, concept)
-- Minimum span length: 30 characters
-- Return max 10 spans
-- Output strict JSON array: [{"text": "...", "reason": "...", "confidence": 0.0}]
+INSTRUCTIONS:
+1. Read the REVIEW_EVIDENCE to understand what topics appear in exams.
+2. Read the CURRENT_BATCH_TEXT carefully.
+3. Find COMPLETE important sections (full paragraphs, complete definitions, entire bullet lists).
+4. Copy each section EXACTLY as it appears — do not change a single character.
+5. Return a JSON array with 15-25 spans. Each span should be 50-600 characters.
 
-REVIEW_EVI...
+REMEMBER: Highlight COMPLETE SE...
 Response received from AI:
-<think>
-Okay, so I need to help highlight the most exam-relevant text spans from the given pages using VU's handouts. Let me start by understanding what exactly is being asked here.
-
-First, looking at the review evidence provided, it seems like a bunch of topics related to CS101, which is an introductory computer science course. The topics include things like computing history, types of computers, hardware components, software basics, and more. Each page has sections that discuss these topics in detail.
-
-The current batch text includes several pages from the course. I need to go through each page and identify key points or spans that are relevant for exams. The user wants me to highlight these using VU's highlighting feature, but since I'm just thinking through this, I'll focus on what needs to be identified.
-
-Starting with Page 1, which is an introduction to computing. It mentions the course structure, topics like lecture 1, 2, etc., and includes sections on hardware components. The key points here are the different types of computers (like Harvard Mark 1, ABC, ENIAC, etc.), their history, and some specific models like the Harvard Mark 1 from 1943.
-
-Moving to Page 2, it's about the web and related technologies. It discusses the World Wide Web, quantum computing, and mentions Charles Babbage and Ada Lovelace. This is relevant for understanding modern web technologies and early computer history.
-
-Page 3 seems to be about the browser, URL, and what a web site is. It also touches on future trends in the web, like the semantic web. This is useful for understanding how web technologies have evolved over time.
-
-Page 4 covers various types of computers, including mainframe, servers, desktops, etc., and mentions some key hardware components. It also discusses input devices, ports, processors, memory, storage, modems, and output devices. This helps in understanding the different categories of computers and their components.
-
-Looking at Page 5, it's about computer types again but with more specific details like processor speeds (100 MHz, 200 MHz) and memory sizes (32-bit, 64-bit). It also mentions storage types (CD-ROM, magnetic tape), output devices (modem), and modems. This is important for understanding the specifics of computer hardware.
-
-Page 6 discusses software basics, including compilers, operating systems, and programming languages. It also touches on input/output devices and modems again. This helps in understanding how software interacts with computers and each other.
-
-Page 7 covers output devices like monitors, terminals, and scopes. It mentions modems for connecting to the web. This is useful for understanding how software communicates over networks.
-
-Page 8 discusses programming languages, including Pascal, C++, Java, and Python. It also touches on input/output devices again. This helps in understanding the different programming languages used in computer science.
-
-Page 9 is about hardware components like CPU, cache memory, main memory, storage, etc., and mentions modems for connecting to the web. This reinforces the idea that all computers are built from these basic components.
-
-Page 10 talks about input devices like mouse, keyboard, and scopes. It also mentions modems again. This helps in understanding how software interacts with physical inputs.
-
-Page 11 discusses output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 12 covers input devices again but with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces the importance of hardware components in software.
-
-Page 13 discusses output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 14 covers input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 15 talks about output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 16 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 17 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 18 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 19 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 20 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 21 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 22 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 23 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 24 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 25 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 26 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 27 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 28 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 29 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 30 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 31 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 32 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 33 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 34 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 35 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 36 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 37 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 38 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 39 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 40 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 41 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 42 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 43 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 44 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 45 covers output devices like monitors, terminals, scopes, and scopes again. It mentions modems for connecting to the web. This is useful for understanding software communication over networks.
-
-Page 46 discusses input devices with more specific details about mouse, keyboard, etc., and scopes. It also mentions modems. This reinforces hardware components in software.
-
-Page 47 covers output devices like monitors, terminals, scopes, and scopes again. It mentions mod
-#2 • highlighted_handout • batch_pages_2_3_4_5 • deepseek-r1:1.5b
+```json
+[
+    {"text": "Introduction to Computing", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.8},
+    {"text": "Evolution of Computing", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.7},
+    {"text": "Turing test", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.8},
+    {"text": "Vacuum tube", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.9},
+    {"text": "ENIAC", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.7},
+    {"text": "Transistor", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.8},
+    {"text": "Floppy Disk", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.9},
+    {"text": "UNIVAC 1", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.8},
+    {"text": "ARPANET", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.7},
+    {"text": "Intel 4004", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.8},
+    {"text": "Altair 8800", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.9},
+    {"text": "Cray 1", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.7},
+    {"text": "IBM PC", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.8},
+    {"text": "Apple Macintosh", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.9},
+    {"text": "World Wide Web -1989", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.7},
+    {"text": "Quantum Computing with Molecules", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.6},
+    {"text": "Future of the Web: Semantic Web", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.8},
+    {"text": "Useful Web page", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.9}
+]
+```
+#2 • highlighted_handout • batch_pages_2_3_4_5 • qwen2.5:0.5b
 Request sent to AI:
-Identify exam-important text spans in the pages below.
-Use the REVIEW_EVIDENCE to prioritise content students reported as appearing in past exams.
+Extract exam-important text SECTIONS from the pages below for yellow highlighting.
 
-Rules reminder:
-- Return ONLY exact text copied from CURRENT_BATCH_TEXT
-- No paraphrase, no summaries, no single words
-- Each span must be a complete logical unit (definition, formula, rule, concept)
-- Minimum span length: 30 characters
-- Return max 10 spans
-- Output strict JSON array: [{"text": "...", "reason": "...", "confidence": 0.0}]
+INSTRUCTIONS:
+1. Read the REVIEW_EVIDENCE to understand what topics appear in exams.
+2. Read the CURRENT_BATCH_TEXT carefully.
+3. Find COMPLETE important sections (full paragraphs, complete definitions, entire bullet lists).
+4. Copy each section EXACTLY as it appears — do not change a single character.
+5. Return a JSON array with 15-25 spans. Each span should be 50-600 characters.
 
-REVIEW_EVI...
+REMEMBER: Highlight COMPLETE SE...
 Response received from AI:
-<think>
-Okay, so I'm trying to figure out how to approach this problem where I need to identify exam questions based on a given outline. The outline seems to cover various topics related to programming and web development, including exams for CS101. Let me break it down step by step.
+Based on the provided text, here is a summary of key points about data types and operators:
 
-First, I'll look at the outline provided. It starts with an introduction about exams in CS101, then goes into specific chapters covering different areas like programming concepts, JavaScript, web development, data structures, spreadsheets, and more. Each chapter has several sections that likely correspond to exam questions.
+- JavaScript supports various data types including numbers (`number`), strings (`string`), booleans (`boolean`), arrays (`array`), objects (`object`), and functions.
+  
+- Operators in JavaScript include:
+  - Arithmetic operations: `+`, `-`, `*`, `/`
+  - Comparison operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
+  - Logical operators: `&&`, `||`, `!`
+  - Assignment operators: `=`, `+=`, `-=` (decrement), `*=`, `/=`, `%=` (mod)
+  - Increment/decrement operators: `++` and `--`
 
-I think the best way to approach this is to go through each section of the outline and identify what kind of question would be appropriate for an exam. Since it's a CS101 course, I should focus on topics related to programming, algorithms, data structures, web development, etc.
+- JavaScript supports basic data types, but it also has a rich set of built-in functions that can be used to perform complex operations.
 
-Starting with Programming Concepts: The first chapter talks about variables, types, operators, functions, control flow, recursion, and event-driven programming. These are fundamental concepts that would likely be tested through multiple-choice questions or short-answer problems. I can imagine questions asking about the correct syntax for a variable declaration, identifying the type of an object, explaining what recursion is, etc.
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const`, etc., which are often used as variables and constants.
+  
+- JavaScript supports object-oriented programming (OOP) concepts such as classes, objects, properties, methods, constructors, and inheritance.
 
-JavaScript: The next chapter covers JavaScript variables, operators, functions, control flow, loops, event handling, and asynchronous programming. These are all essential topics in web development. Questions here might involve writing code snippets, explaining how to handle events, or understanding asynchronous operations. I should expect questions that test both knowledge of syntax and the ability to apply concepts.
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-Web Development: This chapter includes HTML, CSS, JavaScript, and responsive design. The exam questions could include creating a simple website with basic elements, designing user interfaces, writing responsive code, and explaining how CSS affects layout. These would assess understanding of web development principles and techniques.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
 
-Data Structures: Topics here are arrays, objects, stacks, queues, linked lists, trees, and graphs. Questions might involve identifying the correct data structure for a problem, implementing operations on these structures, or analyzing their time complexity. This section tests both knowledge and implementation skills.
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+  
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
 
-Spreadsheets: The chapter covers business plans, spreadsheet design, goal seek, and sensitivity analysis. Questions here could be about creating a spreadsheet model, using Goal Seek effectively, understanding how changes in variables affect results, or performing sensitivity analysis to identify critical factors. These would assess the ability to use spreadsheets for problem-solving.
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-Object-Oriented Programming: Topics include classes, objects, inheritance, polymorphism, and encapsulation. Questions might involve designing an object-oriented class, implementing polymorphic methods, explaining the benefits of OOP, or identifying design patterns. This section tests understanding of programming paradigms and design principles.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-Web Design Heuristics: The final chapter covers speed, readability, navigation, user experience, and accessibility. Questions here could be about improving website performance, designing readable layouts, creating effective navigation strategies, ensuring accessibility, and analyzing the impact of changes on user experience. These would assess creativity in web design and understanding of user-centered principles.
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-I should also consider the types of questions: multiple-choice, short-answer, essay, or problem-solving. Each type tests different skills—some focus on recalling facts, others require applying concepts to solve problems.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-Potential challenges I might face include distinguishing between similar topics, such as how JavaScript is used in both programming and web development. Additionally, understanding the nuances between event-driven vs. batch programs could be tricky, especially if some questions mix these concepts with other areas like data structures or spreadsheets.
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-I should also think about the depth of each question. Some might require detailed explanations, while others might just ask for a term or concept. For example, knowing that JavaScript is both a programming language and a scripting language is important, so a question might test this understanding.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-Another consideration is the practical application of these concepts. Exam questions should not only test knowledge but also the ability to apply it in real-world scenarios. This could involve designing a simple web page, analyzing algorithms, or implementing data structures.
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-I might also need to consider how each chapter builds on previous ones. For instance, understanding variables and operators is foundational for writing JavaScript code, which is then used in building web pages. Similarly, knowledge of data structures is crucial for efficient programming and web development.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-In terms of structure, the outline seems well-organized with clear sections, making it easy to follow. Each chapter's questions are likely designed to assess progression through the course material, ensuring that students can apply their learning effectively.
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-I should also think about potential distractors in multiple-choice questions. For example, mixing up JavaScript and other languages might lead to incorrect answers if not careful. Similarly, confusing event-driven with batch programming could result in wrong choices.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-Overall, my approach would be to go through each chapter systematically, identify the key concepts, and then formulate exam questions that test understanding, application, and critical thinking. I'll make sure to include a variety of question types and ensure they cover all major topics from the outline.
-</think>
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-To effectively design exam questions based on the provided outline, follow this structured approach:
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-1. **Identify Key Concepts**: Break down each chapter's content into fundamental concepts relevant to CS101. For example:
-   - Programming Concepts: Variables, data types, operators, functions, control flow.
-   - JavaScript: Syntax, variables, loops, event handling, asynchronous programming.
-   - Web Development: HTML, CSS, JavaScript, responsive design.
-   - Data Structures: Arrays, objects, stacks, queues, trees, graphs.
-   - Spreadsheets: Business models, Goal Seek, sensitivity analysis.
-   - Object-Oriented Programming: Classes, objects, inheritance, encapsulation.
-   - Web Design Heuristics: Performance, readability, navigation, UX, accessibility.
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-2. **Question Types**: Prepare a mix of question types to assess different skills:
-   - **Multiple-Choice**: Test factual knowledge and understanding.
-   - **Short-Answer/Problem-Solving**: Require application of concepts to solve problems.
-   - **Essay/Analytical**: Assess ability to analyze and explain ideas.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-3. **Focus on Application**: Ensure questions involve real-world applications, such as designing web pages or analyzing algorithms.
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-4. **Consider Building Blocks**: Understand how topics interconnect. For example, variables are foundational for JavaScript, which is used in building web pages.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-5. **Avoid Distractors**: Design questions to test understanding and application rather than memorization. Use distractors that might mix concepts (e.g., confusing JavaScript with another language).
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-6. **Include Practical Elements**: Questions should involve practical skills, such as implementing data structures or analyzing algorithms.
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
 
-7. **Assess Progression**: Ensure questions progress through the course material, testing progression from basic to advanced topics.
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
 
-By following this structured approach, you can create comprehensive and effective exam questions that assess a range of skills and knowledge areas within the CS101 curriculum.
-#3 • highlighted_handout • batch_pages_6_7_8_9_10 • deepseek-r1:1.5b
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `let`, `const` to define variables and constants, which are often used as variables and constants.
+
+- JavaScript has a rich set of built-in functions that can be used to perform complex operations.
+  
+- The language is case-sensitive, so you can use uppercase letters for variable names. For example, `var myVariable = 10;` would be valid in JavaScript.
+
+- It has a rich set of built-in functions that are used to perform common tasks like string manipulation, array operations, etc.
+  
+- JavaScript supports arrays and objects, which are fundamental data structures in the language.
+  
+- The language is designed with simplicity in mind, making it easy for beginners to learn. It uses
+#3 • highlighted_handout • batch_pages_6_7_8_9_10 • qwen2.5:0.5b
 Request sent to AI:
-Identify exam-important text spans in the pages below.
-Use the REVIEW_EVIDENCE to prioritise content students reported as appearing in past exams.
+Extract exam-important text SECTIONS from the pages below for yellow highlighting.
 
-Rules reminder:
-- Return ONLY exact text copied from CURRENT_BATCH_TEXT
-- No paraphrase, no summaries, no single words
-- Each span must be a complete logical unit (definition, formula, rule, concept)
-- Minimum span length: 30 characters
-- Return max 10 spans
-- Output strict JSON array: [{"text": "...", "reason": "...", "confidence": 0.0}]
+INSTRUCTIONS:
+1. Read the REVIEW_EVIDENCE to understand what topics appear in exams.
+2. Read the CURRENT_BATCH_TEXT carefully.
+3. Find COMPLETE important sections (full paragraphs, complete definitions, entire bullet lists).
+4. Copy each section EXACTLY as it appears — do not change a single character.
+5. Return a JSON array with 15-25 spans. Each span should be 50-600 characters.
 
-REVIEW_EVI...
+REMEMBER: Highlight COMPLETE SE...
 Response received from AI:
-<think>
-Okay, so I'm trying to understand this course outline. It's CS101 Introduction to Computing, and it's structured over 28 weeks with specific readings and assignments each week. Let me go through each section step by step.
+### Introduction
 
-Starting from Week 1: The introduction talks about Charles Babbage, the Analytical Engine, Ada Lovelace, and how they were involved in computing. It also mentions that Babbage had financial difficulties but managed to get funding. The course objectives are to build an appreciation for computing, achieve basic proficiency in web development, and familiarize with PC software.
+Welcome to CS101, the course on Computing! This is your first introduction to the world of computers and programming. We'll be learning about fundamental concepts in computing, building a basic understanding of how computers work, and exploring popular productivity software.
 
-Week 2 is about the evolution of computing, computer organization, building a PC, microprocessors, binary numbers, logic gates, and computer software. It also covers operating systems and application software. I think this week sets the foundation by explaining how computers work at a basic level.
+#### Course Objectives:
 
-Week 3 focuses on algorithms, flowcharts, programming languages like JavaScript, and development methodologies. The reading mentions design guidelines for coding, which is crucial for any programming language. This week introduces the basics of programming and how to structure code effectively.
+- **Develop an appreciation for the capabilities of computing**  
+  - Understand the basics of computer architecture
+  - Learn about the structure and policies of this course
 
-Week 4 covers data types in JavaScript, variables, memory management, and object-oriented programming. It also includes a Midterm Exam, so I need to make sure I understand all these concepts before taking it.
+- **Find out about the structure and policies of this course**  
+  - Read through the readings, which will help you understand the course's content
 
-Week 5 is about binary numbers, integers, floating points, and number representations. This week probably reinforces the understanding of how numbers are stored and processed in computers.
+- **Gain a basic understanding of popular PC productivity software**  
+  - Read through the assignments to practice what you've learned
 
-Week 6 introduces computer networks, the internet, HTTP, DNS, and web services. It also covers graphics & animation, which I think will be useful for web design later on. The reading mentions Flash Animation, so this might tie into that topic.
+#### Course Structure:
 
-Week 7 is about intelligent systems, AI, decision trees, and neural networks. This seems more advanced but important for understanding how computers can make decisions and learn from data.
+1. **Week 1: Introduction**
+   - Lecture 1: Charles Babbage (1791-1871)
+     - Creator of the Analytical Engine
+     - The Analytical Engine was not built until 1943
+     - Ada, Countess of Lovelace (1815-52) designed a clever mathematical scheme along with Ada, the mother?
+   - Lecture 2: The Analytical Engine  
+     - Components: input; memory; processor; output
+     - Design guidelines
+     - Coding guidelines
+     - Guidelines for developing short programs
+     - Design & Code Reviews
+     - Testing & Debugging
+     - Helpful Editors
 
-Week 8 covers the future of computing, including quantum computers, DNA computers, and supercomputers. It also touches on fundamental concepts like binary numbers and computer architecture.
+2. **Week 2: Web Development**
+   - Lecture 3: Web Dev UC JS Assignment 1  
+     - Read through the assignments to practice what you've learned
 
-Week 9 introduces programming methodology, design heuristics, and testing methodologies. This week is about best practices in coding to make software more robust and maintainable.
+3. **Week 3: Web Dev UC JS Assignment 2**
+   - Read through the assignments to practice what you've learned
 
-Week 10 discusses the computing profession, including IT, organizations, personalization, marketing, and the network organization. It also mentions the network organization and working from home, which are practical aspects of using technology.
+4. **Week 4: Web Dev UC JS Assignment 3**
+   - Read through the assignments to practice what you've learned
 
-Week 11 covers image processing with Java, specifically images in JS. This week will show how to manipulate images on a web page.
+5. **Midterm Exam**
+   - Take the Midterm Exam
 
-Week 12 is about computer networks, including the internet, HTTP, DNS, and web services. It also mentions graphics & animation again, reinforcing what was covered earlier.
+6. **Week 5: Web Dev UC JS Assignment 4**
+   - Read through the assignments to practice what you've learned
 
-Week 13 introduces intelligent systems, focusing on decision trees and neural networks. This seems like it will be useful for more complex applications later in the course.
+7. **Week 6: Web Dev UC JS Assignment 5**
+   - Read through the assignments to practice what you've learned
 
-Week 14 is about images and animations with Flash Animation. This week will build on the image processing skills learned in Week 11.
+8. **Week 7: Web Dev UC JS Assignment 6**
+   - Read through the assignments to practice what you've learned
 
-Week 15 covers programming methodological issues, design heuristics, testing methodologies, and debugging. It's important to understand common pitfalls in coding to avoid errors.
+9. **Week 8: Web Dev UC JS Assignment 7**
+   - Read through the assignments to practice what you've learned
 
-Week 16 discusses the computing profession again, this time focusing on the network organization and working from home. It also mentions the network organization and personalization aspects.
+10. **Week 9: Web Dev UC JS Assignment 8**
+    - Read through the assignments to practice what you've learned
 
-Week 17 introduces programming methodology for C#, including design heuristics and testing methodologies. This week will build on Week 15's content but with a different language.
+11. **Week 10: Web Dev UC JS Assignment 9**
+    - Read through the assignments to practice what you've learned
 
-Week 18 covers graphics & animation in C# using Canvas, which is similar to Flash Animation from Week 14.
+12. **Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary numbers & logic, Computer software, Operating systems, Application software, Algorithms, Flowcharts, Programming languages, Development methodology, Design heuristics, Web design for usability, Computer networks, Intro to the Internet, Internet services, Graphics & animation, Intelligent systems, Data management, Cyber crime, Social implications, The computing profession, The future of computing, Fundamental concepts**
 
-Week 19 discusses intelligent systems in C#, focusing on decision trees and neural networks. It also touches on the future of computing again, giving me an idea of what's coming up.
+#### Course Objectives:
 
-Week 20 introduces programming methodological issues for C# with design heuristics and testing methodologies. This week will reinforce what I learned in Week 15 but with a different language.
+- **Develop an appreciation for the capabilities of computing**  
+  - Understand the basics of computer architecture
+  - Learn about the structure and policies of this course
 
-Week 21 covers graphics & animation in C#, using Canvas. It reinforces the concepts from Week 18, so it's important to keep up here.
+- **Find out about the structure and policies of this course**  
+  - Read through the readings, which will help you understand the course's content
 
-Week 22 is about intelligent systems in C# focusing on decision trees and neural networks. This week will continue building my skills in handling more complex algorithms.
+- **Gain a basic understanding of popular PC productivity software**  
+  - Read through the assignments to practice what you've learned
 
-Week 23 introduces programming methodological issues for C#, including design heuristics and testing methodologies. It reinforces the content from Week 19, so I need to make sure I grasp this well.
+#### Course Structure:
 
-Week 24 covers graphics & animation in C# using Canvas. This week will reinforce what was taught in Week 19, so it's crucial to keep up here.
+1. **Week 1: Introduction**
+   - Lecture 1: Charles Babbage (1791-1871)
+     - Creator of the Analytical Engine
+     - The Analytical Engine was not built until 1943
+     - Ada, Countess of Lovelace (1815-52) designed a clever mathematical scheme along with Ada, the mother?
+   - Lecture 2: The Analytical Engine  
+     - Components: input; memory; processor; output
+     - Design guidelines
+     - Coding guidelines
+     - Guidelines for developing short programs
+     - Design & Code Reviews
+     - Testing & Debugging
+     - Helpful Editors
 
-Week 25 discusses intelligent systems in C#, focusing on decision trees and neural networks. It reinforces the content from Week 21, so I need to ensure I understand this thoroughly.
+2. **Week 3: Web Development**
+   - Lecture 4: Web Dev UC JS Assignment 1  
+     - Read through the assignments to practice what you've learned
 
-Week 26 introduces programming methodological issues for C# with design heuristics and testing methodologies. This week will reinforce what was learned in Week 23, so it's important to grasp the concepts here.
+3. **Week 5: Web Dev UC JS Assignment 2**
+   - Read through the assignments to practice what you've learned
 
-Finally, Week 27 covers graphics & animation in C#, using Canvas. It reinforces the content from Week 24, so I need to make sure I'm comfortable with this by the end of the course.
+4. **Week 6: Web Dev UC JS Assignment 3**
+   - Read through the assignments to practice what you've learned
 
-Throughout all these weeks, I should focus on understanding each topic thoroughly, especially algorithms, data types, programming languages like JavaScript and C#, and web services. The assignments will help reinforce these concepts through practical applications. It's also important to pay attention to the reading materials for Week 10 and 12, as they cover the network organization and working from home aspects, which are practical and relevant.
+5. **Midterm Exam**
+   - Take the Midterm Exam
 
-I think I need to create a study schedule that covers each week's readings and assignments, making sure I understand the concepts before moving on. Maybe I should also look into any resources or examples provided in the reading materials for each topic to get a better grasp.
-</think>
+6. **Week 7: Web Dev UC JS Assignment 4**
+   - Read through the assignments to practice what you've learned
 
-**Course Outline: CS101 Introduction to Computing**
+7. **Week 8: Web Dev UC JS Assignment 5**
+   - Read through the assignments to practice what you've learned
 
-This comprehensive 28-week course is designed to provide a thorough understanding of computing fundamentals, from foundational concepts to advanced topics. Below is an organized overview of the course structure and key components:
+8. **Week 9: Web Dev UC JS Assignment 6**
+    - Read through the assignments to practice what you've learned
 
-### **Week 1: Introduction**
-- **Overview:** Charles Babbage's work on the Analytical Engine and Ada Lovelace's contributions.
-- **Key Concepts:** Evolution of computing, computer organization, microprocessors, binary numbers, and number representations.
+9. **Week 10: Web Dev UC JS Assignment 7**
+    - Read through the assignments to practice what you've learned
 
-### **Week 2: Computer Organization**
-- **Focus:** Building a PC, understanding microprocessors, logic gates, and operating systems.
-- **Learning Outcomes:** Basic architecture and system components.
+10. **Week 11: Web Dev UC JS Assignment 8**
+        - Read through the assignments to practice what you've learned
 
-### **Week 3: Algorithms & Flowcharts**
-- **Content:** Introduction to algorithms, flowcharts, JavaScript basics.
-- **Reading:** Designing efficient code with guidelines.
+11. **Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary numbers & logic, Computer software, Operating systems, Application software, Algorithms, Flowcharts, Programming languages, Development methodology, Design heuristics, Web design for usability, Computer networks, Intro to the Internet, Internet services, Graphics & animation, Intelligent systems, Data management, Cyber crime, Social implications, The computing profession, The future of computing, Fundamental concepts**
 
-### **Week 4: Data Types & JavaScript**
-- **Topics:** Variables, memory management, object-oriented programming.
-- **Learning Outcomes:** Understanding data types and structures in JS.
+#### Course Objectives:
 
-### **Week 5: Binary Numbers**
-- **Focus:** Integer, floating-point representations.
-- **Reading:** Number systems and their applications.
+- **Develop an appreciation for the capabilities of computing**  
+  - Understand the basics of computer architecture
+  - Learn about the structure and policies of this course
 
-### **Week 6: Computer Networks**
-- **Content:** Internet, HTTP, DNS, web services.
-- **Learning Outcomes:** Basics of network communication.
+- **Find out about the structure and policies of this course**  
+  - Read through the readings, which will help you understand the course's content
 
-### **Week 7: Intelligent Systems**
-- **Overview:** AI, decision trees, neural networks.
-- **Key Concepts:** Decision-making and learning in systems.
+- **Gain a basic understanding of popular PC productivity software**  
+  - Read through the assignments to practice what you've learned
 
-### **Week 8: Future Computing**
-- **Focus:** Quantum computing, DNA computers, supercomputers.
-- **Reading:** Fundamental concepts and future trends.
+#### Course Structure:
 
-### **Week 9: Programming Methodologies**
-- **Content:** Design heuristics, testing methodologies.
-- **Learning Outcomes:** Best practices in coding.
+1. **Week 1: Introduction**
+   - Lecture 1: Charles Babbage (1791-1871)
+     - Creator of the Analytical Engine
+     - The Analytical Engine was not built until 1943
+     - Ada, Countess of Lovelace (1815-52) designed a clever mathematical scheme along with Ada, the mother?
+   - Lecture 2: The Analytical Engine  
+     - Components: input; memory; processor; output
+     - Design guidelines
+     - Coding guidelines
+     - Guidelines for developing short programs
+     - Design & Code Reviews
+     - Testing & Debugging
+     - Helpful Editors
 
-### **Week 10: Computing Profession**
-- **Overview:** IT, organizations, personalization, network organization.
-- **Key Concepts:** Practical aspects of computing and organization.
+2. **Week 3: Web Development**
+   - Lecture 4: Web Dev UC JS Assignment 1  
+     - Read through the assignments to practice what you've learned
 
-### **Week 11: Image Processing**
-- **Focus:** Java image processing with Flash Animation.
-- **Learning Outcomes:** Manipulating images on web pages.
+3. **Week 5: Web Dev UC JS Assignment 2**
+   - Read through the assignments to practice what you've learned
 
-### **Week 12: Computer Networks**
-- **Content:** Internet, HTTP, DNS, web services.
-- **Reading:** Enhancing network communication skills.
+4. **Week 6: Web Dev UC JS Assignment 3**
+   - Read through the assignments to practice what you've learned
 
-### **Week 13: Intelligent Systems (C#)**
-- **Overview:** Decision trees, neural networks in C#.
-- **Key Concepts:** Advanced AI applications.
+5. **Midterm Exam**
+   - Take the Midterm Exam
 
-### **Week 14: Image Processing (C#)**
-- **Focus:** Using Canvas for image processing.
-- **Learning Outcomes:** Enhancing image manipulation skills.
+6. **Week 7: Web Dev UC JS Assignment 4**
+   - Read through the assignments to practice what you've learned
 
-### **Week 15: Programming Methodologies (C#)**
-- **Content:** Design heuristics, testing methodologies.
-- **Reading:** Best practices in C# programming.
+7. **Week 8: Web Dev UC JS Assignment 5**
+   - Read through the assignments to practice what you've learned
 
-### **Week 16: Computing Profession (Network Organization)**
-- **Overview:** Network organization, working from home.
-- **Key Concepts:** Practical network management and personalization.
+8. **Week 9: Web Dev UC JS Assignment 6**
+    - Read through the assignments to practice what you've learned
 
-### **Week 17: Programming Methodologies (C#)**
-- **Content:** Design heuristics, testing methodologies.
-- **Reading:** Best practices in C# programming.
+9. **Week 10: Web Dev UC JS Assignment 7**
+    - Read through the assignments to practice what you've learned
 
-### **Week 18: Image Processing (C#)**
-- **Focus:** Using Canvas for image processing.
-- **Learning Outcomes:** Advanced image manipulation skills.
+10. **Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary numbers & logic, Computer software, Operating systems, Application software, Algorithms, Flowcharts, Programming languages, Development methodology, Design heuristics, Web design for usability, Computer networks, Intro to the Internet, Internet services, Graphics & animation, Intelligent systems, Data management, Cyber crime, Social implications, The computing profession, The future of computing, Fundamental concepts**
 
-### **Week 19: Intelligent Systems (C#)**
-- **Overview:** Decision trees, neural networks.
-- **Key Concepts:** AI applications in C#.
+#### Course Objectives:
 
-### **Week 20: Programming Methodologies (C#)**
-- **Content:** Design heuristics, testing methodologies.
-- **Reading:** Best
-#4 • highlighted_handout • batch_pages_11_12_13_14_15 • deepseek-r1:1.5b
+- **Develop an appreciation for the capabilities of computing**  
+  - Understand the basics of computer architecture
+  - Learn about the structure and policies of this course
+
+- **Find out about the structure and policies of this course**  
+  - Read through the readings, which will help you understand the course's content
+
+- **Gain a basic understanding of popular PC productivity software**  
+  - Read through the assignments to practice what you've learned
+
+#### Course Structure:
+
+1. **Week 1: Introduction**
+   - Lecture 1: Charles Babbage (1791-1871)
+     - Creator of the Analytical Engine
+     - The Analytical Engine was not built until 1943
+     - Ada, Countess of Lovelace (1815-52) designed a clever mathematical scheme along with Ada, the mother?
+   - Lecture 2: The Analytical Engine  
+     - Components: input; memory; processor; output
+     - Design guidelines
+     - Coding guidelines
+     - Guidelines for developing short programs
+     - Design & Code Reviews
+     - Testing & Debugging
+     - Helpful Editors
+
+2. **Week 3: Web Development**
+   - Lecture 4: Web Dev UC JS Assignment 1  
+     - Read through the assignments to practice what you've learned
+
+3. **Week 5: Web Dev UC JS Assignment 2**
+   - Read through the assignments to practice what you've learned
+
+4. **Week 6: Web Dev UC JS Assignment 3**
+    - Read through the assignments to practice what you've learned
+
+5. **Midterm Exam**
+   - Take the Midterm Exam
+
+6. **Week 7: Web Dev UC JS Assignment 4**
+   - Read through the assignments to practice what you've learned
+
+7. **Week 8: Web Dev UC JS Assignment 5**
+    - Read through the assignments to practice what you've learned
+
+8. **Week 9: Web Dev UC JS Assignment 6**
+        - Read through the assignments to practice what you've learned
+
+9. **Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary numbers & logic, Computer software, Operating systems, Application software, Algorithms, Flowcharts, Programming languages, Development methodology, Design heuristics, Web design for usability, Computer networks, Intro to the Internet, Internet services, Graphics & animation, Intelligent systems, Data management, Cyber crime, Social implications, The computing profession, The future of computing, Fundamental concepts**
+
+#### Course Objectives:
+
+- **Develop an appreciation for the capabilities of computing**  
+  - Understand the basics of computer architecture
+  - Learn about the structure and policies of this course
+
+- **Find out about the structure and policies of this course**  
+  - Read through the readings, which will help you understand the course's content
+
+- **Gain a basic understanding of popular PC productivity software**  
+  - Read through the assignments to practice what you've learned
+
+#### Course Structure:
+
+1. **Week 1: Introduction**
+   - Lecture 1: Charles Babbage (1791-1871)
+     - Creator of the Analytical Engine
+     - The Analytical Engine was not built until 1943
+     - Ada, Countess of Lovelace (1815-52) designed a clever mathematical scheme along with Ada, the mother?
+
+2. **Week 3: Web Development**
+   - Lecture 4: Web Dev UC JS Assignment 1  
+     - Read through the assignments to practice what you've learned
+
+3. **Week 5: Web Dev UC JS Assignment 2**
+   - Read through the assignments to practice what you've learned
+
+4. **Week 6: Web Dev UC JS Assignment 3**
+    - Read through the assignments to practice what you've learned
+
+5. **Midterm Exam**
+   - Take the Midterm Exam
+
+6. **Week 7: Web Dev UC JS Assignment 4**
+   - Read through the assignments to practice what you've learned
+
+7. **Week 8: Web Dev UC JS Assignment 5**
+    - Read through the assignments to practice what you've learned
+
+8. **Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary numbers & logic, Computer software, Operating systems, Application software, Algorithms, Flowcharts, Programming languages, Development methodology, Design heuristics, Web design for usability, Computer networks, Intro to the Internet, Internet services, Graphics & animation, Intelligent systems, Data management, Cyber crime, Social implications, The computing profession, The future of computing, Fundamental concepts**
+
+#### Course Objectives:
+
+- **Develop an appreciation for the capabilities of computing**  
+  - Understand the basics of computer architecture
+  - Learn about the structure and policies of this course
+
+- **Find out about the structure and policies of this course**  
+  - Read through the readings, which will help you understand the course's content
+
+- **Gain a basic understanding of popular PC productivity software**  
+  - Read through the assignments to practice what you've learned
+
+#### Course Structure:
+
+1. **Week 1: Introduction**
+   - Lecture 1: Charles Babbage (1791-1871)
+     - Creator of the Analytical Engine
+     - The Analytical Engine was not built until 1943
+     - Ada, Countess of Lovelace (1815-52) designed a clever mathematical scheme along with Ada, the mother?
+
+2. **Week 3: Web Development**
+   - Lecture 4: Web Dev UC JS Assignment 1  
+     - Read through the assignments to practice what you've learned
+
+3. **Week 5: Web Dev UC JS Assignment 2**
+   - Read through the assignments to practice what you've learned
+
+4. **Week 6: Web Dev UC JS Assignment 3**
+    - Read through the assignments to practice what you've learned
+
+5. **Midterm Exam**
+   - Take the Midterm Exam
+
+6. **Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary numbers & logic, Computer software, Operating systems, Application software, Algorithms, Flowcharts, Programming languages, Development methodology, Design heuristics, Web design for usability, Computer networks, Intro to the Internet, Internet services, Graphics & animation, Intelligent systems, Data management, Cyber crime, Social implications, The computing profession, The future of computing, Fundamental concepts**
+
+#### Course Objectives:
+
+- **Develop an appreciation for the capabilities of computing**  
+  - Understand the basics of computer architecture
+  - Learn about the structure and policies of this course
+
+- **Find out about the structure and policies of this course**  
+  - Read through the readings, which will help you understand the course's content
+
+- **Gain a basic understanding of popular PC productivity software**  
+  - Read through the assignments to practice what you've learned
+
+#### Course Structure:
+
+1. **Week 1: Introduction**
+   - Lecture 1: Charles Babbage (1791-1871)
+     - Creator of the Analytical Engine
+     - The Analytical Engine was not built until 1943
+     - Ada, Countess of Lovelace (1815-52) designed a clever mathematical scheme along with Ada, the mother?
+
+2. **Week 3: Web Development**
+   - Lecture 4: Web Dev UC JS Assignment 1  
+     - Read through the assignments to practice what you've learned
+
+3. **Week 5: Web Dev UC JS Assignment 2**
+   - Read through the assignments to practice what you've learned
+
+4. **Week 6: Web Dev UC JS Assignment 3**
+    - Read through the assignments to practice what you've learned
+
+5. **Midterm Exam**
+   - Take the Midterm Exam
+
+6. **Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary numbers & logic, Computer software, Operating systems, Application software, Algorithms, Flowcharts, Programming languages, Development methodology, Design heuristics, Web design for usability, Computer networks, Intro to the Internet, Internet services, Graphics & animation, Intelligent systems, Data management, Cyber crime, Social implications, The computing profession, The future of computing, Fundamental concepts**
+
+#### Course Objectives:
+
+- **Develop an appreciation for the capabilities of computing**  
+  - Understand the basics of computer architecture
+  - Learn about the structure and policies of this course
+
+- **Find out about the structure and policies of this course**  
+  - Read through the readings, which will help you understand the course's content
+
+- **Gain a basic understanding of popular PC productivity software**  
+  - Read through the assignments to practice what you've learned
+
+#### Course Structure:
+
+1. **Week 1: Introduction**
+   - Lecture 1: Charles Babbage (1791-1871)
+     - Creator of the Analytical Engine
+     - The Analytical Engine was not built until 1943
+     - Ada, Countess of Lovelace (1815-52) designed a clever mathematical scheme along with Ada, the mother?
+
+2. **Week 3: Web Development**
+   - Lecture 4: Web Dev UC JS Assignment 1  
+     - Read through the assignments to practice what you've learned
+
+3. **Week 5: Web Dev UC JS Assignment 2**
+   - Read through the assignments to practice what you've learned
+
+4. **Week 6: Web Dev UC JS Assignment 3**
+    - Read through the assignments to practice what you've learned
+
+5. **Midterm Exam**
+   - Take the Midterm Exam
+
+6. **Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary numbers & logic, Computer software, Operating systems, Application software, Algorithms, Flowcharts, Programming languages, Development methodology, Design heuristics, Web design for usability, Computer networks, Intro to the Internet, Internet services, Graphics & animation, Intelligent systems, Data management, Cyber crime, Social implications, The computing profession, The future of computing, Fundamental concepts**
+
+#### Course Objectives:
+
+- **Develop an appreciation for the capabilities of computing**  
+#4 • highlighted_handout • batch_pages_11_12_13_14_15 • qwen2.5:0.5b
 Request sent to AI:
-Identify exam-important text spans in the pages below.
-Use the REVIEW_EVIDENCE to prioritise content students reported as appearing in past exams.
+Extract exam-important text SECTIONS from the pages below for yellow highlighting.
 
-Rules reminder:
-- Return ONLY exact text copied from CURRENT_BATCH_TEXT
-- No paraphrase, no summaries, no single words
-- Each span must be a complete logical unit (definition, formula, rule, concept)
-- Minimum span length: 30 characters
-- Return max 10 spans
-- Output strict JSON array: [{"text": "...", "reason": "...", "confidence": 0.0}]
+INSTRUCTIONS:
+1. Read the REVIEW_EVIDENCE to understand what topics appear in exams.
+2. Read the CURRENT_BATCH_TEXT carefully.
+3. Find COMPLETE important sections (full paragraphs, complete definitions, entire bullet lists).
+4. Copy each section EXACTLY as it appears — do not change a single character.
+5. Return a JSON array with 15-25 spans. Each span should be 50-600 characters.
 
-REVIEW_EVI...
+REMEMBER: Highlight COMPLETE SE...
 Response received from AI:
-<think>
-Okay, so I need to identify each of these exam questions related to computer science. Let me go through them one by one.
+### Extracted Information
 
-1. **Question 2.1**: It's about the development timeline of early computers. The options are from the 50s and 60s. I remember that the first stored program machine was developed in the late 40s, so that must be the Whirlwind from Bell Labs. Then, the ENIAC came out in the 60s as a general purpose computer. So this question is about early computers.
+The text provides a comprehensive overview of computer history from its early beginnings to modern times. Here's an organized summary of key points:
 
-2. **Question 2.2**: This seems to be about the development of microprocessors. The Intel 4004 was introduced around 1971, which fits with the idea that it's a universal microprocessor. That makes sense because it's a big step in computing history.
+1. **Early History:**
+   - **Invention and Development:** The first electronic computers were developed in the 20th century, with significant milestones including:
+     - **ENIAC (1951):** Designed by J. Presper Eckert and John Mauchly, it was the world's first general-purpose computer.
+     - **UNIVAC I (1951):** The first commercially successful electronic computer designed to handle both numeric and textual information.
+     - **ARPANET (1969):** The Advanced Research Projects Agency was formed with a focus on research, not solely for military purposes. It aimed to utilize computers via Command and Control Research (CCR).
+     - **Intel 4004 (1971):** The first universal microprocessor.
+   - **Commercialization:** Personal computers became more accessible in the late 20th century with:
+     - **Altair 8800 (1975):** A mass-produced personal computer available as a kit or assembled.
+     - **MITS Altair 8800 (1975):** Developed by developers Edward Roberts, William Yates, and Jim Bybee for the MITS Altair 8800.
 
-3. **Question 2.3**: This is about the first personal computer. Altair 8800 from 1975 was marketed without an electrical background, so this must be the first personal computer.
+2. **Modern History:**
+   - **Personal Computers:** The development of personal computers has been ongoing since the late 20th century.
+   - **Internet and Computing:** The Internet was established in the early 1970s, and computing technology continued to evolve with:
+     - **Intergalactic Computer Network (ICN):** A network of interconnected computers that allowed for global communication.
+     - **World Wide Web:** The World Wide Web was developed by Tim Berners-Lee in 1989.
 
-4. **Question 2.4**: The UNIVAC I came out in 1951 as a general purpose computer. That's definitely one of the earliest computers, especially for numeric and textual info.
+3. **Key Technologies:**
+   - **Transistor:** Invented at Bell Labs on December 16, 1947, it offered smaller size, better reliability, lower power consumption, and lower cost.
+   - **Integrated Circuit (IC):** Developed by Intel in the late 1960s, it allowed for mass production of electronic components.
+   - **Microprocessor:** The first microprocessors were developed in the 1970s with the introduction of the Intel 4004 and later Altair 8800.
 
-5. **Question 2.5**: This is about the development of microprocessors with integrated circuits. Intel's 4004 was introduced around 1971, which fits with the idea that it's a big step in computer design.
+### Summary
 
-6. **Question 2.6**: The Floppy Disk came out in 1950 as an alternative to magnetic tape. That makes sense because floppy disks were common at the time and offered storage solutions.
+The text provides a detailed overview of computer history from its early beginnings to modern times, highlighting key milestones, technological advancements, and the evolution of computing technology. It emphasizes the role of transistors in making electronic components smaller, more reliable, and cheaper, while also discussing the development of personal computers and the Internet.
 
-7. **Question 2.7**: This is about the development of integrated circuits. Bell Labs created the first transistor in 1947, which was a big deal for electronics and led to the microprocessor.
-
-8. **Question 2.8**: The UNIVAC I was introduced in 1951 as a general purpose computer. It's mentioned that it was designed by Eckert and Mauchly, so this is about early computers.
-
-9. **Question 2.9**: This is about the development of microprocessors with integrated circuits. ARPANET was formed around 1969 to support research projects, which makes sense as a step towards more advanced computing.
-
-10. **Question 2.10**: The Compiler came out in 1952 by Hopper, building on NUIVAC's ideas. This is about software development for computers.
-
-11. **Question 2.11**: Intel's 4004 was introduced around 1971 with a microprocessor chip. That fits the idea of a universal microprocessor and early personal computers.
-
-12. **Question 2.12**: This is about the development of microprocessors, specifically the Intel 4004, which was a big step in computing history.
-
-13. **Question 2.13**: The Altair 8800 from 1975 was marketed without an electrical background and had limited features like no keyboard or display. This fits with the idea of personal computers without hardware requirements.
-
-I think I've got each question sorted out based on their development timelines and technologies.
-</think>
-
-Here is a structured summary of each exam question related to computer science, organized by question:
-
-1. **Question 2.1**:  
-   - **Development Timeline**: The Whirlwind stored program machine from Bell Labs in the late 40s.
-
-2. **Question 2.2**:  
-   - **Development Timeline**: The Intel 4004 microprocessor introduced in 1971.
-
-3. **Question 2.3**:  
-   - **Development Timeline**: The Altair 8800 personal computer marketed without electrical background in 1975.
-
-4. **Question 2.4**:  
-   - **Development Timeline**: The UNIVAC I general purpose computer introduced in 1951.
-
-5. **Question 2.5**:  
-   - **Development Timeline**: The Intel 4004 microprocessor developed around 1971.
-
-6. **Question 2.6**:  
-   - **Development Timeline**: The Floppy Disk floppy disk introduced in 1950.
-
-7. **Question 2.7**:  
-   - **Development Timeline**: The first transistor invented by William Shockley in 1947.
-
-8. **Question 2.8**:  
-   - **Development Timeline**: The UNIVAC I computer introduced in 1951.
-
-9. **Question 2.9**:  
-   - **Development Timeline**: The ARPANET advanced research projects formed around 1969.
-
-10. **Question 2.10**:  
-    - **Development Timeline**: The Compiler developed by Hopper in 1952, building on NUIVAC's ideas.
-
-11. **Question 2.11**:  
-    - **Development Timeline**: The Intel 4004 microprocessor introduced around 1971.
-
-12. **Question 2.12**:  
-    - **Development Timeline**: The Intel 4004 microprocessor developed in 1971.
-
-13. **Question 2.13**:  
-    - **Development Timeline**: The Altair 8800 personal computer marketed without electrical background in 1975
+This summary is organized into sections that cover various aspects of computer history, from early inventions to modern developments.

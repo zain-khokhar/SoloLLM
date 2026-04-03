@@ -11,7 +11,6 @@ from sse_starlette.sse import EventSourceResponse
 from core.config import settings
 from core.inference import ollama_client
 from core.token_budget import TokenTracker, estimate_token_count
-from core.continuation import detect_truncation, build_continuation_messages, stitch_content
 from core.kv_cache import kv_cache_manager
 from core.context_manager import thread_context_builder
 from core.intent_classifier import classify as classify_intent
@@ -27,7 +26,7 @@ from storage.database import (
     get_default_thread, get_thread, get_thread_settings,
     get_thread_documents,
 )
-from storage.schemas import ChatRequest, ContinueRequest
+from storage.schemas import ChatRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -276,9 +275,6 @@ async def _stream_chat(
                 done_reason = chunk.get("done_reason", "stop")
                 tracker.set_final_count(eval_count)
 
-        # Check for truncation
-        truncation = detect_truncation(full_content, done_reason, eval_count, max_tokens)
-
         # Save message to database
         token_count = eval_count if eval_count > 0 else estimate_token_count(full_content)
         await update_message(
@@ -291,30 +287,16 @@ async def _stream_chat(
         # Track KV-cache state
         kv_cache_manager.save_cache_state(conversation_id, model, token_count)
 
-        if truncation["is_truncated"] and settings.truncation_detection:
-            yield {
-                "event": "truncated",
-                "data": json.dumps({
-                    "message_id": message_id,
-                    "conversation_id": conversation_id,
-                    "thread_id": thread_id,
-                    "tokens_used": token_count,
-                    "reason": truncation["reason"],
-                    "confidence": truncation["confidence"],
-                    "last_content": truncation["last_content"],
-                }),
-            }
-        else:
-            yield {
-                "event": "done",
-                "data": json.dumps({
-                    "message_id": message_id,
-                    "conversation_id": conversation_id,
-                    "thread_id": thread_id,
-                    "tokens_used": token_count,
-                    "truncated": False,
-                }),
-            }
+        yield {
+            "event": "done",
+            "data": json.dumps({
+                "message_id": message_id,
+                "conversation_id": conversation_id,
+                "thread_id": thread_id,
+                "tokens_used": token_count,
+                "truncated": False,
+            }),
+        }
 
     except Exception as e:
         logger.error(f"Streaming error: {e}")
@@ -618,120 +600,3 @@ async def chat(request: ChatRequest):
     )
 
 
-@router.post("/chat/continue")
-async def continue_chat(request: ContinueRequest):
-    """Continue a truncated response from where it stopped."""
-    # Get conversation and message
-    conversation = await get_conversation(request.conversation_id)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    original_message = await get_message(request.message_id)
-    if not original_message:
-        raise HTTPException(status_code=404, detail="Message not found")
-
-    if original_message["role"] != "assistant":
-        raise HTTPException(status_code=400, detail="Can only continue assistant messages")
-
-    if not await ollama_client.is_available():
-        raise HTTPException(status_code=503, detail="Ollama is not running.")
-
-    model = conversation["model"]
-    max_tokens = settings.max_tokens
-    original_content = original_message["content"]
-
-    # Get thread_id from the original message for context isolation
-    thread_id = original_message.get("thread_id")
-
-    # Get only messages from the same thread (context isolation!)
-    all_messages = await get_messages(request.conversation_id, thread_id=thread_id)
-    prior_messages = []
-    for msg in all_messages:
-        if msg["id"] == request.message_id:
-            break
-        prior_messages.append({"role": msg["role"], "content": msg["content"]})
-
-    # Build continuation messages
-    system_prompt = conversation.get("system_prompt", "")
-    if system_prompt:
-        context_messages = [{"role": "system", "content": system_prompt}] + prior_messages
-    else:
-        context_messages = prior_messages
-
-    continuation_messages = build_continuation_messages(
-        context_messages, original_content
-    )
-
-    async def _stream_continuation():
-        tracker = TokenTracker(max_tokens=max_tokens)
-        continuation_content = ""
-        done_reason = "stop"
-        eval_count = 0
-
-        try:
-            async for chunk in ollama_client.chat_stream(
-                messages=continuation_messages,
-                model=model,
-                max_tokens=max_tokens,
-            ):
-                if chunk["type"] == "token":
-                    token = chunk["content"]
-                    tracker.add_token(token)
-                    continuation_content += token
-                    yield {
-                        "event": "token",
-                        "data": json.dumps({"content": token}),
-                    }
-
-                elif chunk["type"] == "done":
-                    eval_count = chunk.get("eval_count", 0)
-                    done_reason = chunk.get("done_reason", "stop")
-                    tracker.set_final_count(eval_count)
-
-            # Stitch the content together
-            full_content = stitch_content(original_content, continuation_content)
-            total_tokens = (original_message.get("token_count", 0) or 0) + eval_count
-
-            # Update the original message with stitched content
-            await update_message(request.message_id, full_content, total_tokens)
-
-            # Track continuation in KV-cache
-            kv_cache_manager.record_continuation(request.conversation_id, eval_count)
-
-            # Check if this continuation is also truncated
-            truncation = detect_truncation(continuation_content, done_reason, eval_count, max_tokens)
-
-            if truncation["is_truncated"] and settings.truncation_detection:
-                yield {
-                    "event": "truncated",
-                    "data": json.dumps({
-                        "message_id": request.message_id,
-                        "conversation_id": request.conversation_id,
-                        "tokens_used": total_tokens,
-                        "reason": truncation["reason"],
-                        "confidence": truncation["confidence"],
-                        "last_content": truncation["last_content"],
-                    }),
-                }
-            else:
-                yield {
-                    "event": "done",
-                    "data": json.dumps({
-                        "message_id": request.message_id,
-                        "conversation_id": request.conversation_id,
-                        "tokens_used": total_tokens,
-                        "truncated": False,
-                    }),
-                }
-
-        except Exception as e:
-            logger.error(f"Continuation streaming error: {e}")
-            yield {
-                "event": "error",
-                "data": json.dumps({"error": str(e)}),
-            }
-
-    return EventSourceResponse(
-        _stream_continuation(),
-        media_type="text/event-stream",
-    )

@@ -69,10 +69,10 @@ class GenerateRequest(BaseModel):
     batch_pages: int = Field(5, ge=1, le=10)
     max_batch_chars: int = Field(7000, ge=1200, le=30000)
     max_review_evidence_chars: int = Field(2500, ge=500, le=12000)
-    max_spans_per_batch: int = Field(20, ge=5, le=60)
+    max_spans_per_batch: int = Field(25, ge=5, le=60)
     debug_mode: bool = False
     continue_on_error: bool = True
-    max_highlights_per_page: int = Field(15, ge=3, le=30)
+    max_highlights_per_page: int = Field(20, ge=3, le=30)
 
 
 class BulkGenerateRequest(BaseModel):
@@ -87,10 +87,10 @@ class BulkGenerateRequest(BaseModel):
     batch_pages: int = Field(5, ge=1, le=10)
     max_batch_chars: int = Field(7000, ge=1200, le=30000)
     max_review_evidence_chars: int = Field(2500, ge=500, le=12000)
-    max_spans_per_batch: int = Field(20, ge=5, le=60)
+    max_spans_per_batch: int = Field(25, ge=5, le=60)
     debug_mode: bool = False
     continue_on_error: bool = True
-    max_highlights_per_page: int = Field(15, ge=3, le=30)
+    max_highlights_per_page: int = Field(20, ge=3, le=30)
 
 
 class FeedbackRequest(BaseModel):

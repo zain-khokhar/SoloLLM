@@ -118,8 +118,7 @@ class OllamaClient:
             },
         }
 
-        if max_tokens:
-            payload["options"]["num_predict"] = max_tokens
+        # Do NOT set num_predict — let the model generate until natural completion
 
         # ── Max-Power mode: force all layers to GPU, max CPU threads ──
         if settings.max_power_mode:
@@ -184,8 +183,7 @@ class OllamaClient:
             },
         }
 
-        if max_tokens:
-            payload["options"]["num_predict"] = max_tokens
+        # Do NOT set num_predict — let the model generate until natural completion
 
         # ── Max-Power mode: force all layers to GPU, max CPU threads ──
         if settings.max_power_mode:

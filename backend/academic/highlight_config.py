@@ -19,11 +19,14 @@ class HighlightConfig:
     max_review_evidence_chars: int = 2500
 
     # ── AI Output ─────────────────────────────────────────────
-    max_spans_per_batch: int = 20
-    min_span_length: int = 15
-    max_span_length: int = 500
+    max_spans_per_batch: int = 25
+    min_span_length: int = 40              # reject tiny useless spans
+    max_span_length: int = 800
     ai_temperature: float = 0.1
-    ai_max_tokens: int = 2000
+    ai_max_tokens: int = 4000
+
+    # ── Model requirements ──────────────────────────────────
+    min_model_params_b: float = 3.0        # block models below 3B — they hallucinate
 
     # ── Retry / Error ─────────────────────────────────────────
     max_retries_per_batch: int = 1
@@ -32,8 +35,8 @@ class HighlightConfig:
     max_failed_batch_pct: float = 0.50     # stop if >50% batches fail
 
     # ── Highlight density ─────────────────────────────────────
-    target_highlights_per_page: int = 5
-    max_highlights_per_page: int = 15
+    target_highlights_per_page: int = 8
+    max_highlights_per_page: int = 20
 
     # ── Matching ──────────────────────────────────────────────
     fuzzy_match_fallback: bool = True
@@ -53,60 +56,39 @@ class HighlightConfig:
 # ── System prompt ─────────────────────────────────────────────
 
 HIGHLIGHT_SYSTEM_PROMPT = """\
-You are an Expert Highlighted Handout Generator for Virtual University (VU) Pakistan students.
+You extract exam-important text from VU Pakistan course handouts for yellow highlighting.
 
-YOUR ROLE:
-You analyze course handout pages alongside student exam review evidence to identify and extract the most exam-relevant text spans for yellow highlighting.
+RULES:
+1. Read CURRENT_BATCH_TEXT. Find important sections that match REVIEW_EVIDENCE topics.
+2. Copy each section EXACTLY character-for-character from CURRENT_BATCH_TEXT. Never paraphrase.
+3. Each "text" value MUST be 50-600 characters long. Never use single words or short phrases.
+4. Return 10-25 spans per batch.
+5. Output ONLY a JSON array. Nothing else. No explanation. No summary. No markdown.
 
-TARGET AUDIENCE:
-VU students preparing for midterm and final exams. Your highlights must help them focus on what actually appears in exams.
+WHAT TO COPY:
+- Complete definitions with explanations (the term AND its meaning)
+- Full paragraphs about key concepts
+- Complete bullet-point groups
+- Formulas, rules, theorems with context
 
-HIGHLIGHTING RULES:
-1. ONLY return text that appears EXACTLY (verbatim) in the CURRENT_BATCH_TEXT.
-2. Each highlight MUST be a COMPLETE logical unit:
-   - Full definitions (term + explanation)
-   - Complete formulas with context
-   - Entire rules, principles, or key statements
-   - Important paragraphs (2-5 sentences) that explain a core concept
-3. NEVER highlight single words, incomplete sentences, or partial definitions.
-4. Minimum highlight length: 30 characters.
-5. Preferred highlight length: 50-250 characters.
-6. DO NOT paraphrase or summarize — copy text exactly as it appears.
+NEVER DO:
+- Never write your own text. Only copy from CURRENT_BATCH_TEXT.
+- Never output single words like "ENIAC" or "Transistor" — always include the full sentence/paragraph.
+- Never output markdown, HTML, or XML tags.
+- Never summarize or explain. Just output the JSON array.
 
-PRIORITY ORDER (what to highlight first):
-1. Content that MATCHES topics/concepts mentioned in REVIEW_EVIDENCE (exam-proven).
-2. Definitions of key terms and concepts.
-3. Formulas, equations, and their explanations.
-4. Rules, principles, and important theorems.
-5. Frequently tested concepts (based on review patterns).
-6. Important examples that explain core concepts.
-
-OUTPUT FORMAT:
-Return ONLY a valid JSON array. No explanations, no thinking, no markdown headers.
-[
-  {"text": "exact copied text span from batch", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.0}
-]
-
-CRITICAL:
-- Return 8-20 spans per batch.
-- If you cannot find enough relevant content return fewer spans rather than highlighting irrelevant text.
-- Do NOT wrap JSON in markdown code fences.
-- Do NOT include any text before or after the JSON array.\
+OUTPUT — ONLY THIS, NOTHING ELSE:
+[{"text": "exact text copied from the batch, minimum 50 characters long", "reason": "definition", "confidence": 0.9}]\
 """
 
 # ── Batch user prompt template ────────────────────────────────
 
 HIGHLIGHT_BATCH_PROMPT_TEMPLATE = """\
-Identify exam-important text spans in the pages below.
-Use the REVIEW_EVIDENCE to prioritise content students reported as appearing in past exams.
+Copy exam-important text sections from CURRENT_BATCH_TEXT below.
+Each "text" must be copied EXACTLY from the batch (50-600 chars). Return 10-{max_spans} spans.
+Output ONLY the JSON array — no explanation, no summary, no markdown.
 
-Rules reminder:
-- Return ONLY exact text copied from CURRENT_BATCH_TEXT
-- No paraphrase, no summaries, no single words
-- Each span must be a complete logical unit (definition, formula, rule, concept)
-- Minimum span length: 30 characters
-- Return max {max_spans} spans
-- Output strict JSON array: [{{"text": "...", "reason": "...", "confidence": 0.0}}]
+[{{"text": "exact copied text from batch", "reason": "definition|formula|rule|concept|exam_point", "confidence": 0.0-1.0}}]
 
 REVIEW_EVIDENCE:
 {review_evidence}
@@ -118,14 +100,19 @@ CURRENT_BATCH_TEXT:
 # ── Repair prompt (used on retry after invalid response) ──────
 
 HIGHLIGHT_REPAIR_PROMPT = """\
-Your previous response was not valid JSON or did not contain any valid highlight spans.
+Your previous response was NOT valid. You MUST return ONLY a JSON array.
 
-Return ONLY a JSON array of objects, nothing else.
-Each object: {{"text": "exact text from the page content above", "reason": "...", "confidence": 0.0}}
+DO NOT output any thinking, explanation, or commentary. ONLY output the JSON array.
+
+Step 1: Find important text sections in the batch pages above.
+Step 2: Copy each section EXACTLY (verbatim, no changes).
+Step 3: Return this JSON format:
+
+[{{"text": "exact text copied from the pages above", "reason": "concept", "confidence": 0.8}}]
 
 Rules:
-- Copy text EXACTLY from the batch pages — do not paraphrase.
-- Minimum text length per span: 30 characters.
-- Return 5-15 spans.
-- No markdown, no explanations, no thinking tags.\
+- Each "text" value must be copied EXACTLY from the page content above.
+- Minimum 50 characters per span.
+- Return 5-20 spans.
+- Output ONLY the JSON array. Nothing else. No ```json```. No explanations.\
 """

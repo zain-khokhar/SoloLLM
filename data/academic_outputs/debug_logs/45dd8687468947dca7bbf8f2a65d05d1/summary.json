@@ -1,0 +1,17 @@
+{
+  "job_id": "45dd8687468947dca7bbf8f2a65d05d1",
+  "course_code": "CS101",
+  "model": "qwen2.5:0.5b",
+  "total_pages": 323,
+  "target_pages": 15,
+  "total_batches": 4,
+  "total_highlights": 5,
+  "total_spans_returned": 57,
+  "total_spans_matched": 2,
+  "total_spans_unmatched": 55,
+  "overall_match_rate": 0.035,
+  "total_retries": 0,
+  "failed_batches": 0,
+  "skipped_batches": 0,
+  "total_duration_seconds": 317.39
+}

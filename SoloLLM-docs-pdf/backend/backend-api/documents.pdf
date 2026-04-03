@@ -1,0 +1,154 @@
+%PDF-1.4
+%“Œ‹ž ReportLab Generated PDF document http://www.reportlab.com
+1 0 obj
+<<
+/F1 2 0 R /F2 3 0 R /F3 4 0 R /F4 5 0 R
+>>
+endobj
+2 0 obj
+<<
+/BaseFont /Helvetica /Encoding /WinAnsiEncoding /Name /F1 /Subtype /Type1 /Type /Font
+>>
+endobj
+3 0 obj
+<<
+/BaseFont /Courier-Bold /Encoding /WinAnsiEncoding /Name /F2 /Subtype /Type1 /Type /Font
+>>
+endobj
+4 0 obj
+<<
+/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Name /F3 /Subtype /Type1 /Type /Font
+>>
+endobj
+5 0 obj
+<<
+/BaseFont /Courier /Encoding /WinAnsiEncoding /Name /F4 /Subtype /Type1 /Type /Font
+>>
+endobj
+6 0 obj
+<<
+/Contents 19 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 18 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+7 0 obj
+<<
+/Contents 20 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 18 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+8 0 obj
+<<
+/Outlines 10 0 R /PageMode /UseNone /Pages 18 0 R /Type /Catalog
+>>
+endobj
+9 0 obj
+<<
+/Author () /CreationDate (D:20260317123645+05'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20260317123645+05'00') /Producer (xhtml2pdf <https://github.com/xhtml2pdf/xhtml2pdf/>) 
+  /Subject () /Title () /Trapped /False
+>>
+endobj
+10 0 obj
+<<
+/Count 3 /First 11 0 R /Last 11 0 R /Type /Outlines
+>>
+endobj
+11 0 obj
+<<
+/Count -2 /Dest [ 6 0 R /Fit ] /First 12 0 R /Last 13 0 R /Parent 10 0 R /Title (backend/api/documents.py Documentation \(Roman Urdu\))
+>>
+endobj
+12 0 obj
+<<
+/Dest [ 6 0 R /Fit ] /Next 13 0 R /Parent 11 0 R /Title (File Ka Maqsad \(Purpose\))
+>>
+endobj
+13 0 obj
+<<
+/Count -4 /Dest [ 6 0 R /Fit ] /First 14 0 R /Last 17 0 R /Parent 11 0 R /Prev 12 0 R 
+  /Title (Code Blocks aur API Endpoints ki Tafseel)
+>>
+endobj
+14 0 obj
+<<
+/Dest [ 6 0 R /Fit ] /Next 15 0 R /Parent 13 0 R /Title (1. POST /upload)
+>>
+endobj
+15 0 obj
+<<
+/Dest [ 6 0 R /Fit ] /Next 16 0 R /Parent 13 0 R /Prev 14 0 R /Title (2. GET /list aur DELETE /{document_id})
+>>
+endobj
+16 0 obj
+<<
+/Dest [ 6 0 R /Fit ] /Next 17 0 R /Parent 13 0 R /Prev 15 0 R /Title (3. POST /query)
+>>
+endobj
+17 0 obj
+<<
+/Dest [ 6 0 R /Fit ] /Parent 13 0 R /Prev 16 0 R /Title (4. Workspaces Operations)
+>>
+endobj
+18 0 obj
+<<
+/Count 2 /Kids [ 6 0 R 7 0 R ] /Type /Pages
+>>
+endobj
+19 0 obj
+<<
+/Filter [ /ASCII85Decode /FlateDecode ] /Length 2320
+>>
+stream
+Gb!;eD/\/e&H88.ESDjR8/[PahY(O%)Q,*OY$(+o)do>6/LHW,9<'C!'8HJ[*@Y34@QBb/A_:JEMP]@fh/gn*Ua]F@U?6O*!;M!OV\^$qKCKCI:,n1c@5pIIGk<f+l,q_dM.]st!1jo:hskQ"CEDeCH$bbn43g"KHQ69#V1b=V*cs^,"`7G*J-QjBp1!@&FYB6uMgM%J1CApGe67"&0i[at1La55!Tn@<C^/*i=lOjr3H4_3G.9A!Rl`fRSM"]""DrS)IDROW`<)Ds*:8p<$O21U&_c9;[rj9@@5&G&6tYDW.,r]0T.Lj7Wt[#J@i3Os#90%Mo)R';%n.5r),(7dq*JW3CA\MLhNd&?EkMC/_>)].&q0(eS&5-SAKH'RqUH1q"Z.r9Zr+%ML!cpb<ZGDc,LkE\8)#C.Lo3T8THQ\#3M,\JHZV1;JPrdk:'-rk[hTV\PL"WhcPRtXU"rEaKZ9mB;5uuNIA3@'i*]2N#7BKY/K2-@l`0":RuH:l24Q*1X%Hn;,Va[p),En&ef^8)>f<UpWu.U6ILVEi\\J`0c\`p+B2,b9c7_rNI9qZn"DRtD4N-LHj[)qHNF8:48l_93_q=mVLpDm]W\N-cK/[h5j,aZ8]ZNl-3@7tXhA&"D^qG;/DZ?Z/h^m!#)E9e6]QLfJ/]X=h@O<J(`p#BXG@*rZO8^QcNVKG?Lo\9oQ:7re(VTu@*B/Mh=2[$\']4pd&UPTqI5\g%J/er"it-aQ52l4<2ZFW2h^M\p;FAVk37LXAT-P[n-;NLqlkL4S+k&Eg><-.T$SapB-YsR@9OND53F&)f*f]*AS09jX8Q!d-(>=V]n`71\G<64F&lP+,Q23!VBar\3d27a'eka2b2o$#8q]khQ!4Spt39/<bnX#[F^/+?'U5W$rY$T""$Wftka,IusOtqGd^iRiXcO3\s\A.2HZjq1,7TnXl3Udfn3t(i+e3V`.D!?!"Dq&aE[D.]FT*3li#^9?GDs_aqTAM)K<FK0uk/#SPK\Ygt895C:`>c;$KIMN(F$!9E1N=#[Y$Tru$%/EA?p[$&X;%#31&$4^\@$uY*QQCe!Vbr@U$E9T]=L!5R&2En9=GQ*.Bsi8Ag!&EmIqX@pB\Zigcl4RCm2I)ld8-40lm?p@Ln%UoUOXhfYUKJ4Yt:M?9`UG/DFT<_U7$AOaIfmjI>W>hqPj>r`iD(`cWHT.M_C11\_`7(r*UDJX<-=n3`DhA?`B!X+\%8VAnnti3ChFU\Dn#M3^JILR_]Y&8@Tj@6%Jgh2@8(%CX7s]t:k%HT`FAIi//G*r\!BrV!-df+>Wr#.H^:[(WAP=N8$MVXY/g=JUN3hRI%CqR6:2GkVU.AUYTE3o\fD$+>m5DQbtbiIi4%H=ee)Uk?df6S-:4LkO([j6X!@1js2:=AMM"b)$Pc7SDDg<XHqI1do1PHW+Y.mncPO6Aqo^k#rg_(dsnP]c.8(9!!C@+q.,D:_05[O'5f'fUU^Qpu9#&n)jL3>H6<hiGFu'&PN;1D[!BsD"aNRlmNu/>8s^QU/-m(%k8^ujMT_LF*?gB0*@e\+I<@!ES5.l+7X"nDEk5a4D?^E+4cm.10EqK*fp[BU5GU/<M+sN<rjH[O9k!R&iIn-]Fo?72@%J_W0U"hN\"L+b:HN#%p3@=j^Ef]N:i2s/uCB4EB4HWCFE(:`i%ZuDVK%:o,S%ddfqA]qhafL(W5%cEM2FIk\%@FJU+q!#V<;j=cYfs.[OesgMBN$^D`j%:1I;3#@'tV"1&MaA:-SR*0,enqWAci+6)dn^6i<l]`0YXoi()pn\PA-TOS/[o+:/ASXY%ii;Bhqjt'0h,55B0k^9"hM(6G;bK[(CT-G_b$7:p)U'kN]CVsu0DmGgGk.pCQ$-hF_MVDWp:,.U5[OQug?n*Xo+hp]>NONrTVm!R@^-lF7#l)AXOja3":\?/m5-Y2I"a)2(!Du$N3pY$^N:3M]lb>tN:@O3i@.2`tIpC.%md!u4Nog.k]0<=aG2/,%joKK"Im^P+RG$@AY0BXPgUMc?#DO16J8P3iHc^.`i0K;lWRj>qhF#U_#=$_e1(I`':(b6m;-_tZFi%[^j?dBW4OZ&PM@:d5A2-d,"I2HRcdYm(N;?;IDC65O7)L)Qk'mCA$5b?eYiA'C1b(p+Bn[2=[o&%O$<"QC(8a,EQ0+fg=W4#lZV^X0mMEC*`NemXV[)c'jI;Pt_FO8_NT;'/JIAUe>bDk4[$$<QW.pXYo7N(O-a6U2.kL0U--I7PL'7c,e(Y)n7o[K<^$1=+XNco'K)ej%[[Hk@oRm!.s-gitLIO860,Y,R(:%bHf]a>7qA\X5RX+~>endstream
+endobj
+20 0 obj
+<<
+/Filter [ /ASCII85Decode /FlateDecode ] /Length 514
+>>
+stream
+Gat$t9lHd\'YO#fk"$`InZr\5pXVt(W`#[1<;)W9(J$k+TPKA[pX_Zn-L-An=CCe!`q*g?9]0@+ps!U42T,Ha5Q]UGUmOLBLq>57)_Jp"LMSQ1k$6[1P;(uc#4/i^%)7gk0i'7CN)l$pkle`=C3Hii=^9F/%((,V6kU/$aQf`=cB>FL_:#$E^dg;Z&$oXCDgK&AXfmi"$j)hsQ4'303BWK@bA=+a(oFAG#tu7B+asuEVV.h?:5L1B7UqO^6,\fC^Yp:VN0N=m-+Ne#M'.(;S61LGkOOeVW1fB`b7h/)(h#a9-7MU3kD1cd@e,$o.mR^2)8)Nt/(h])mnA3,oc/;CXnCH:e`C@$)Ld-51$1Fu&)5&fmk,aS?.JTiEBis).m<0Gmu"-\WneDdn'5nIiu7*bm<^ddZPfplKZ(RY<iF39b2!OrS+#[KkrZDG>Jk@tGiW^=2/Bl$p8,uo9?[+m+fmN$rOsci1_-!uH,YdXTpZ[+T.dpg1I@`%bT]CG%i\Bm\c~>endstream
+endobj
+xref
+0 21
+0000000000 65535 f 
+0000000073 00000 n 
+0000000134 00000 n 
+0000000241 00000 n 
+0000000351 00000 n 
+0000000463 00000 n 
+0000000568 00000 n 
+0000000773 00000 n 
+0000000978 00000 n 
+0000001064 00000 n 
+0000001316 00000 n 
+0000001390 00000 n 
+0000001548 00000 n 
+0000001655 00000 n 
+0000001816 00000 n 
+0000001912 00000 n 
+0000002044 00000 n 
+0000002152 00000 n 
+0000002257 00000 n 
+0000002323 00000 n 
+0000004735 00000 n 
+trailer
+<<
+/ID 
+[<309018e1c38e158c3912d42b0487352e><309018e1c38e158c3912d42b0487352e>]
+% ReportLab generated PDF document -- digest (http://www.reportlab.com)
+
+/Info 9 0 R
+/Root 8 0 R
+/Size 21
+>>
+startxref
+5340
+%%EOF

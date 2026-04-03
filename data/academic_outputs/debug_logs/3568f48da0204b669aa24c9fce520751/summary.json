@@ -1,0 +1,17 @@
+{
+  "job_id": "3568f48da0204b669aa24c9fce520751",
+  "course_code": "CS101",
+  "model": "mistral-7b-v0-3:latest",
+  "total_pages": 323,
+  "target_pages": 15,
+  "total_batches": 4,
+  "total_highlights": 0,
+  "total_spans_returned": 0,
+  "total_spans_matched": 0,
+  "total_spans_unmatched": 0,
+  "overall_match_rate": 0.0,
+  "total_retries": 0,
+  "failed_batches": 0,
+  "skipped_batches": 0,
+  "total_duration_seconds": 0.0
+}

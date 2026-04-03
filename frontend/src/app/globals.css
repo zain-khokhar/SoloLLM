@@ -319,3 +319,8 @@ body {
   transform: translateY(-1px);
   box-shadow: var(--shadow-glow);
 }
+
+.hover-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

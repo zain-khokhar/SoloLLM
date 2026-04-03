@@ -1,0 +1,176 @@
+{
+  "job_id": "45dd8687468947dca7bbf8f2a65d05d1",
+  "course_code": "CS101",
+  "model": "qwen2.5:0.5b",
+  "total_pages": 323,
+  "target_pages": 15,
+  "total_batches": 4,
+  "total_highlights": 5,
+  "total_spans_returned": 57,
+  "total_spans_matched": 2,
+  "total_spans_unmatched": 55,
+  "overall_match_rate": 0.035,
+  "total_retries": 0,
+  "failed_batches": 0,
+  "skipped_batches": 0,
+  "total_duration_seconds": 317.39,
+  "batches": [
+    {
+      "batch_index": 0,
+      "pages": [
+        1
+      ],
+      "actual_pages_processed": [
+        0
+      ],
+      "overflow_pages": [],
+      "prompt_chars": 11512,
+      "response_chars": 1944,
+      "spans_returned": 2,
+      "spans_matched": 2,
+      "spans_unmatched": 0,
+      "unmatched_spans": [],
+      "match_rate": 1.0,
+      "page_highlight_counts": {
+        "0": 2
+      },
+      "error": "",
+      "retry_used": false,
+      "retry_error": "",
+      "duration_seconds": 24.28
+    },
+    {
+      "batch_index": 1,
+      "pages": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "actual_pages_processed": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "overflow_pages": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "prompt_chars": 27522,
+      "response_chars": 19202,
+      "spans_returned": 25,
+      "spans_matched": 0,
+      "spans_unmatched": 25,
+      "unmatched_spans": [
+        "The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `l",
+        "The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `l",
+        "The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `l",
+        "The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `l",
+        "The language is designed with simplicity in mind, making it easy for beginners to learn. It uses keywords like `var`, `l",
+        "JavaScript supports object-oriented programming (OOP) concepts such as classes, objects, properties, methods, constructo",
+        "JavaScript supports arrays and objects, which are fundamental data structures in the language.",
+        "JavaScript supports arrays and objects, which are fundamental data structures in the language.",
+        "JavaScript supports arrays and objects, which are fundamental data structures in the language.",
+        "JavaScript supports arrays and objects, which are fundamental data structures in the language."
+      ],
+      "match_rate": 0.0,
+      "page_highlight_counts": {},
+      "error": "",
+      "retry_used": false,
+      "retry_error": "",
+      "duration_seconds": 136.49
+    },
+    {
+      "batch_index": 2,
+      "pages": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "actual_pages_processed": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "overflow_pages": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "prompt_chars": 21147,
+      "response_chars": 17635,
+      "spans_returned": 25,
+      "spans_matched": 0,
+      "spans_unmatched": 25,
+      "unmatched_spans": [
+        "**Final Week: Intro to Computing, Evolution of Computing, Computer Organization, Building a PC, Microprocessors, Binary ",
+        "Welcome to CS101, the course on Computing! This is your first introduction to the world of computers and programming. We",
+        "Find out about the structure and policies of this course Read through the readings, which will help you understand the c",
+        "Find out about the structure and policies of this course Read through the readings, which will help you understand the c",
+        "Develop an appreciation for the capabilities of computing Understand the basics of computer architecture Learn about the",
+        "Gain a basic understanding of popular PC productivity software Read through the assignments to practice what you've lear",
+        "**Week 1: Introduction Lecture 1: Charles Babbage (1791-1871) Creator of the Analytical Engine The Analytical Engine was",
+        "**Week 2: Web Development Lecture 3: Web Dev UC JS Assignment 1 Read through the assignments to practice what you've lea",
+        "Develop an appreciation for the capabilities of computing Understand the basics of computer architecture Learn about the",
+        "Gain a basic understanding of popular PC productivity software Read through the assignments to practice what you've lear"
+      ],
+      "match_rate": 0.0,
+      "page_highlight_counts": {},
+      "error": "",
+      "retry_used": false,
+      "retry_error": "",
+      "duration_seconds": 133.28
+    },
+    {
+      "batch_index": 3,
+      "pages": [
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "actual_pages_processed": [
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "overflow_pages": [
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "prompt_chars": 17855,
+      "response_chars": 2672,
+      "spans_returned": 5,
+      "spans_matched": 0,
+      "spans_unmatched": 5,
+      "unmatched_spans": [
+        "The text provides a comprehensive overview of computer history from its early beginnings to modern times. Here's an orga",
+        "**Modern History: Personal Computers:** The development of personal computers has been ongoing since the late 20th centu",
+        "**Key Technologies: Transistor:** Invented at Bell Labs on December 16, 1947, it offered smaller size, better reliabilit",
+        "The text provides a detailed overview of computer history from its early beginnings to modern times, highlighting key mi",
+        "This summary is organized into sections that cover various aspects of computer history, from early inventions to modern "
+      ],
+      "match_rate": 0.0,
+      "page_highlight_counts": {},
+      "error": "",
+      "retry_used": false,
+      "retry_error": "",
+      "duration_seconds": 23.34
+    }
+  ]
+}

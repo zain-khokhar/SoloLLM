@@ -15,7 +15,8 @@ import SetupWizard from "@/components/setup/SetupWizard";
 import ModelPicker from "@/components/setup/ModelPicker";
 import TrainingView from "@/components/training/TrainingView";
 import AcademicStudio from "@/components/academic/AcademicStudio";
-import { streamChat, streamContinuation, streamWebSearch, getConversation, getThread, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels, uploadDocument, attachDocumentToThread, getThreadDocuments, listDocuments, detachDocumentFromThread } from "@/lib/api";
+import ModelQuantizer from "@/components/quantize/ModelQuantizer";
+import { streamChat, streamWebSearch, getConversation, getThread, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels, uploadDocument, attachDocumentToThread, getThreadDocuments, listDocuments, detachDocumentFromThread } from "@/lib/api";
 import { DistillationMeta, Thread, DocumentInfo } from "@/types";
 import {
   ArrowLeft,
@@ -39,16 +40,9 @@ interface ChatMessage {
   content: string;
 }
 
-interface TruncationInfo {
-  message_id: string;
-  conversation_id: string;
-  reason: string;
-  confidence: number;
-}
-
 export default function Home() {
   const [showSetup, setShowSetup] = useState<boolean | null>(null); // null = checking
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "graph" | "agent" | "dashboard" | "export" | "models" | "training" | "academic">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "graph" | "agent" | "dashboard" | "export" | "models" | "training" | "academic" | "quantize">("chat");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -57,8 +51,6 @@ export default function Home() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [selectedModel, setSelectedModel] = useState("llama3.2:1b");
-  const [truncation, setTruncation] = useState<TruncationInfo | null>(null);
-  const [isContinuing, setIsContinuing] = useState(false);
   const [refreshSidebar, setRefreshSidebar] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [distillationMeta, setDistillationMeta] = useState<DistillationMeta | null>(null);
@@ -141,7 +133,6 @@ export default function Home() {
     setStreamingContent("");
     setIsStreaming(false);
     setIsSearching(false);
-    setTruncation(null);
     setError(null);
     setDistillationMeta(null);
     setThreadDocuments([]);
@@ -159,7 +150,6 @@ export default function Home() {
       const defaultThreadId = data.default_thread_id || (data.threads?.[0]?.id ?? null);
       setActiveThreadId(defaultThreadId);
       setSelectedModel(data.conversation.model);
-      setTruncation(null);
       setError(null);
       setDistillationMeta(null);
 
@@ -203,7 +193,6 @@ export default function Home() {
             content: m.content,
           }))
       );
-      setTruncation(null);
       setError(null);
       setDistillationMeta(null);
     } catch {
@@ -214,7 +203,6 @@ export default function Home() {
   const handleSend = useCallback(
     (message: string, options?: { documentsOnly?: boolean }) => {
       setError(null);
-      setTruncation(null);
       setDistillationMeta(null);
 
       const userMsg: ChatMessage = {
@@ -256,26 +244,8 @@ export default function Home() {
             setStreamingContent("");
             setRefreshSidebar((prev) => prev + 1);
           },
-          onTruncated: (data) => {
-            setIsStreaming(false);
-            setConversationId(data.conversation_id);
-            if (data.thread_id) setActiveThreadId(data.thread_id);
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: data.message_id,
-                role: "assistant",
-                content: accumulated,
-              },
-            ]);
-            setStreamingContent("");
-            setTruncation({
-              message_id: data.message_id,
-              conversation_id: data.conversation_id,
-              reason: data.reason,
-              confidence: data.confidence,
-            });
-            setRefreshSidebar((prev) => prev + 1);
+          onTruncated: () => {
+            // Truncation disabled — treat as done
           },
           onError: (err) => {
             setIsStreaming(false);
@@ -311,66 +281,6 @@ export default function Home() {
       setStreamingContent("");
     }
   }, [streamingContent]);
-
-  const handleContinue = useCallback(() => {
-    if (!truncation) return;
-    setIsContinuing(true);
-    setIsStreaming(true);
-    setStreamingContent("");
-
-    let accumulated = "";
-
-    const controller = streamContinuation(
-      {
-        conversation_id: truncation.conversation_id,
-        message_id: truncation.message_id,
-      },
-      {
-        onToken: (content) => {
-          accumulated += content;
-          setStreamingContent(accumulated);
-        },
-        onDone: () => {
-          setIsStreaming(false);
-          setIsContinuing(false);
-          setTruncation(null);
-          setMessages((prevMsgs) =>
-            prevMsgs.map((m) =>
-              m.id === truncation.message_id
-                ? { ...m, content: m.content + accumulated }
-                : m
-            )
-          );
-          setStreamingContent("");
-        },
-        onTruncated: (data) => {
-          setIsStreaming(false);
-          setIsContinuing(false);
-          setMessages((prevMsgs) =>
-            prevMsgs.map((m) =>
-              m.id === truncation.message_id
-                ? { ...m, content: m.content + accumulated }
-                : m
-            )
-          );
-          setStreamingContent("");
-          setTruncation({
-            message_id: data.message_id,
-            conversation_id: data.conversation_id,
-            reason: data.reason,
-            confidence: data.confidence,
-          });
-        },
-        onError: (err) => {
-          setIsStreaming(false);
-          setIsContinuing(false);
-          setError(err);
-        },
-      }
-    );
-
-    abortRef.current = controller;
-  }, [truncation]);
 
   // Load document catalog on startup
   useEffect(() => {
@@ -432,7 +342,6 @@ export default function Home() {
   const handleWebSearch = useCallback(
     (query: string) => {
       setError(null);
-      setTruncation(null);
       setDistillationMeta(null);
 
       // Show user message immediately
@@ -516,6 +425,7 @@ export default function Home() {
         onOpenModels={() => setCurrentView("models")}
         onOpenTraining={() => setCurrentView("training")}
         onOpenAcademic={() => setCurrentView("academic")}
+        onOpenQuantize={() => setCurrentView("quantize")}
         refreshTrigger={refreshSidebar}
       />
 
@@ -538,6 +448,8 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg-primary)" }}>
           <AcademicStudio />
         </div>
+      ) : currentView === "quantize" ? (
+        <ModelQuantizer onBack={() => setCurrentView("chat")} />
       ) : currentView === "models" ? (
         <div className="flex-1 flex flex-col h-screen" style={{ background: "var(--bg-primary)" }}>
           <div
@@ -634,9 +546,6 @@ export default function Home() {
             messages={messages}
             isStreaming={isStreaming || isSearching}
             streamingContent={streamingContent}
-            truncation={truncation}
-            onContinue={handleContinue}
-            isContinuing={isContinuing}
             distillationMeta={distillationMeta}
           />
 
@@ -715,9 +624,7 @@ export default function Home() {
 interface SettingsForm {
   ollama_base_url: string;
   default_model: string;
-  max_tokens: number;
   temperature: number;
-  auto_continue: boolean;
   system_prompt: string;
 }
 
@@ -742,9 +649,7 @@ function SettingsView({ onBack }: { onBack: () => void }) {
           setFormData({
             ollama_base_url: settingsData.ollama_base_url || "http://localhost:11434",
             default_model: settingsData.default_model || "llama3.2:latest",
-            max_tokens: settingsData.max_tokens || 2048,
             temperature: settingsData.temperature || 0.7,
-            auto_continue: settingsData.auto_continue ?? true,
             system_prompt: settingsData.system_prompt || "",
           });
         }
@@ -926,13 +831,6 @@ function SettingsView({ onBack }: { onBack: () => void }) {
                     onChange={(v) => updateField("default_model", v)}
                   />
                   <SettingsField
-                    label="Max Tokens"
-                    desc="Maximum output tokens per response (higher = longer answers)"
-                    value={String(formData.max_tokens)}
-                    onChange={(v) => updateField("max_tokens", parseInt(v) || 2048)}
-                    type="number"
-                  />
-                  <SettingsField
                     label="Temperature"
                     desc="Creativity level (0.0 = focused, 1.0 = creative)"
                     value={String(formData.temperature)}
@@ -940,37 +838,6 @@ function SettingsView({ onBack }: { onBack: () => void }) {
                     type="number"
                     step="0.1"
                   />
-
-                  {/* Auto-Continue Toggle */}
-                  <div className="flex items-center justify-between py-2">
-                    <div>
-                      <label className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                        Auto-Continue
-                      </label>
-                      <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                        Detect truncated responses and offer continuation
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => updateField("auto_continue", !formData.auto_continue)}
-                      className="w-11 h-6 rounded-full transition-smooth relative"
-                      style={{
-                        background: formData.auto_continue
-                          ? "linear-gradient(135deg, var(--gradient-start), var(--gradient-end))"
-                          : "var(--bg-tertiary)",
-                        border: `1px solid ${formData.auto_continue ? "transparent" : "var(--border-color)"}`,
-                      }}
-                    >
-                      <div
-                        className="w-4 h-4 rounded-full absolute top-0.5 transition-all duration-200"
-                        style={{
-                          background: "white",
-                          left: formData.auto_continue ? "calc(100% - 20px)" : "3px",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-                        }}
-                      />
-                    </button>
-                  </div>
 
                   {/* System Prompt */}
                   <div>

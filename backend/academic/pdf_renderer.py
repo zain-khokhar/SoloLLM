@@ -342,6 +342,28 @@ class PDFRenderer:
 
         model_name = model or getattr(settings, "academic_generation_model", None) or settings.default_model
 
+        # ── Model capability check ──
+        model_warning: str | None = None
+        try:
+            model_info = await ollama_client.show_model(model_name)
+            param_size_str = (model_info or {}).get("details", {}).get("parameter_size", "")
+            if param_size_str:
+                size_upper = param_size_str.strip().upper()
+                if size_upper.endswith("B"):
+                    try:
+                        param_size_b = float(size_upper[:-1])
+                        if 0 < param_size_b < cfg.min_model_params_b:
+                            raise RuntimeError(
+                                f"Model '{model_name}' has only {param_size_str} parameters. "
+                                f"Models under {cfg.min_model_params_b}B cannot follow JSON format instructions "
+                                f"and produce garbage/hallucinated output. "
+                                f"Please use a 7B+ model (e.g., qwen2.5:7b, llama3:8b, deepseek-r1:7b)."
+                            )
+                    except ValueError:
+                        pass
+        except Exception:
+            pass  # Best effort — don't block generation for model info failure
+
         # ── Build review evidence (once, reused every batch) ──
         review_lines = []
         for t in review_texts or []:
@@ -474,28 +496,32 @@ class PDFRenderer:
             - JSON object arrays [{text: ...}]
             - JSON string arrays ["..."]
             - dict with "highlights" key
-            - Line-based fallback with bullet/number stripping
+            - Rejects hallucinated responses that contain no JSON at all
             """
             if not raw:
                 return []
 
-            # Step 1: Strip <think>...</think> blocks
-            text = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL)
-            # Also strip <reasoning>...</reasoning> blocks
-            text = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL)
+            # Step 1: Strip <think>...</think> and <reasoning>...</reasoning> blocks
+            text = re.sub(r'<think>[\s\S]*?(?:</think>|$)', '', raw)
+            text = re.sub(r'<reasoning>[\s\S]*?(?:</reasoning>|$)', '', text)
             text = text.strip()
 
             if not text:
                 return []
 
-            # Step 2: Strip code fences and extract JSON body
+            # Step 2: Reject hallucinated responses — if no '[' found, the AI
+            # didn't produce JSON at all (it wrote an essay/summary instead)
+            if '[' not in text:
+                logger.warning("AI response contains no JSON array — likely hallucinated. Skipping.")
+                return []
+
+            # Step 3: Strip code fences and extract JSON body
             json_text = _extract_json_array_text(text)
 
-            # Step 3: Attempt JSON parse
+            # Step 4: Attempt JSON parse
             try:
                 parsed = json.loads(json_text)
                 spans: list[str] = []
-                # Handle: list of objects, list of strings, or dict with "highlights"
                 arr = (
                     parsed if isinstance(parsed, list)
                     else parsed.get("highlights", []) if isinstance(parsed, dict)
@@ -516,16 +542,10 @@ class PDFRenderer:
             except (json.JSONDecodeError, ValueError):
                 pass
 
-            # Step 4: Fallback — line-based extraction
-            spans = []
-            for line in _strip_code_fences(text).splitlines():
-                s = line.strip().strip("-*\"' •·►▪")
-                # Strip common prefixes: numbered lists, "text:" labels
-                s = re.sub(r'^(?:\d+[\.\)]\s*|text:\s*)', '', s, flags=re.IGNORECASE).strip()
-                s = s.strip("\"' ")
-                if cfg.min_span_length <= len(s) <= cfg.max_span_length:
-                    spans.append(s)
-            return spans[:cfg.max_spans_per_batch]
+            # Step 5: No valid JSON parsed — return empty (don't fall back to
+            # line-based extraction which picks up garbage from hallucinated text)
+            logger.warning("Could not parse valid JSON spans from AI response (%d chars). Skipping.", len(text))
+            return []
 
 
 
@@ -584,6 +604,33 @@ class PDFRenderer:
                         head = re.sub(r"[^A-Za-z0-9\s]", " ", s)
                         head = re.sub(r"\s+", " ", head).strip()[:70]
                         rects = doc[pidx].search_for(head) if len(head) >= 28 else []
+                    if not rects and len(s) > 80:
+                        # Fallback 3: head+tail anchor matching
+                        import fitz as _fitz
+                        head_text = s[:40].strip()
+                        tail_text = s[-40:].strip()
+                        head_rects = doc[pidx].search_for(head_text) if len(head_text) >= 15 else []
+                        tail_rects = doc[pidx].search_for(tail_text) if len(tail_text) >= 15 else []
+                        if head_rects and tail_rects:
+                            # Only combine if anchors are within ~200pt vertically (same region)
+                            hr, tr = head_rects[0], tail_rects[0]
+                            if abs(tr.y1 - hr.y0) < 200:
+                                combined = _fitz.Rect(hr)
+                                combined.include_rect(tr)
+                                rects = [combined]
+                    if not rects and '. ' in s and len(s) > 60:
+                        # Fallback 4: sentence-level decomposition
+                        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', s)
+                        for sent in sentences:
+                            sent = sent.strip()
+                            if len(sent) >= 30:
+                                sent_rects = doc[pidx].search_for(sent[:120])
+                                for rect in sent_rects[:1]:
+                                    if _safe_add_highlight(doc[pidx], rect):
+                                        matched = True
+                                        batch_hits += 1
+                                        page_highlight_counts[pidx] = page_highlight_counts.get(pidx, 0) + 1
+                                        batch_log.page_highlight_counts[pidx] = page_highlight_counts[pidx]
                     for rect in rects[:3]:
                         if _safe_add_highlight(doc[pidx], rect):
                             matched = True
@@ -782,26 +829,52 @@ class PDFRenderer:
 
             # ── Review-informed rescue path (if zero AI hits) ──
             if batch_hits == 0 and review_keywords:
+                rescue_hits = 0
                 for pidx in actual_pages:
                     if page_highlight_counts.get(pidx, 0) >= cfg.max_highlights_per_page:
                         continue
                     page_text = doc[pidx].get_text("text")
                     if not page_text:
                         continue
-                    lines = [ln.strip() for ln in page_text.splitlines() if len(ln.strip()) >= 35]
-                    for ln in lines:
-                        lower_ln = ln.lower()
-                        if sum(1 for kw in review_keywords if kw in lower_ln) >= 2:
-                            rects = doc[pidx].search_for(ln[:180])
-                            for rect in rects[:1]:
-                                if _safe_add_highlight(doc[pidx], rect):
-                                    batch_hits += 1
-                                    page_highlight_counts[pidx] = page_highlight_counts.get(pidx, 0) + 1
-                                    break
-                        if batch_hits >= 3:
+                    # Build candidate sections: group consecutive non-empty lines
+                    raw_lines = page_text.splitlines()
+                    sections: list[str] = []
+                    current_section: list[str] = []
+                    for ln in raw_lines:
+                        stripped = ln.strip()
+                        if len(stripped) >= 15:
+                            current_section.append(stripped)
+                        elif current_section:
+                            joined = " ".join(current_section)
+                            if 40 <= len(joined) <= 600:
+                                sections.append(joined)
+                            current_section = []
+                    if current_section:
+                        joined = " ".join(current_section)
+                        if 40 <= len(joined) <= 600:
+                            sections.append(joined)
+
+                    # Score and highlight sections that match review keywords
+                    scored_sections = []
+                    for sec in sections:
+                        lower_sec = sec.lower()
+                        kw_count = sum(1 for kw in review_keywords if kw in lower_sec)
+                        if kw_count >= 2:
+                            scored_sections.append((sec, kw_count))
+                    scored_sections.sort(key=lambda x: x[1], reverse=True)
+
+                    for sec, _ in scored_sections[:5]:
+                        if page_highlight_counts.get(pidx, 0) >= cfg.max_highlights_per_page:
                             break
-                    if batch_hits >= 3:
-                        break
+                        search_text = sec[:180]
+                        rects = doc[pidx].search_for(search_text)
+                        for rect in rects[:1]:
+                            if _safe_add_highlight(doc[pidx], rect):
+                                rescue_hits += 1
+                                page_highlight_counts[pidx] = page_highlight_counts.get(pidx, 0) + 1
+                                batch_log.page_highlight_counts[pidx] = page_highlight_counts[pidx]
+                                break
+                batch_hits += rescue_hits
 
             total_highlights += batch_hits
             processed_batches += 1
@@ -870,6 +943,7 @@ class PDFRenderer:
             "skipped_batches": len(skipped_batches),
             "match_rate": round(job_log.overall_match_rate, 3),
             "total_spans_returned": job_log.total_spans_returned,
+            "model_warning": model_warning,
             "debug_log_path": str(
                 settings.data_dir / "academic_outputs" / "debug_logs" / (job_id or "unknown")
             ),

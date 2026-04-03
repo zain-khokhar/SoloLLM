@@ -48,7 +48,7 @@ export default function GenerationCenter() {
   const [batchPages, setBatchPages] = useState(5);
   const [maxBatchChars, setMaxBatchChars] = useState(7000);
   const [maxReviewEvidenceChars, setMaxReviewEvidenceChars] = useState(2500);
-  const [maxSpansPerBatch, setMaxSpansPerBatch] = useState(20);
+  const [maxSpansPerBatch, setMaxSpansPerBatch] = useState(25);
   const [syllabusScope, setSyllabusScope] = useState<"all" | "midterm" | "final">("all");
   const [splitMode, setSplitMode] = useState<"auto" | "manual" | "none">("auto");
   const [manualMidtermEndPage, setManualMidtermEndPage] = useState<number>(237);
@@ -208,6 +208,25 @@ export default function GenerationCenter() {
                 <option key={m.name} value={m.name}>{m.name}</option>
               ))}
             </select>
+            {(() => {
+              const model = models.find(m => m.name === selectedModel);
+              const paramSize = model?.parameter_size;
+              if (paramSize) {
+                const sizeNum = parseFloat(paramSize.replace(/[^0-9.]/g, ''));
+                if (sizeNum > 0 && sizeNum < 7) {
+                  return (
+                    <div style={{
+                      marginTop: "6px", padding: "8px 12px", borderRadius: "8px",
+                      background: "rgba(255,193,7,0.15)", border: "1px solid rgba(255,193,7,0.3)",
+                      fontSize: "12px", color: "#ffc107",
+                    }}>
+                      {selectedModel} ({paramSize}) is too small. Models under 7B produce garbage highlights. Use 7B+ (e.g., qwen2.5:7b, llama3:8b, deepseek-r1:7b).
+                    </div>
+                  );
+                }
+              }
+              return null;
+            })()}
           </div>
 
           <div>
@@ -471,6 +490,27 @@ export default function GenerationCenter() {
                     <div style={{ marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       Pages: {(job.checkpoint_json.preview.processed_pages || []).slice(0, 20).join(", ") || "-"}
                     </div>
+                  </div>
+                )}
+
+                {job.checkpoint_json?.render_stats && (
+                  <div style={{ marginTop: "4px", fontSize: "11px", color: "#9aa" }}>
+                    Match rate: {((job.checkpoint_json.render_stats.match_rate || 0) * 100).toFixed(1)}%
+                    {" | "}Highlights: {job.checkpoint_json.render_stats.highlight_count || 0}
+                    {" | "}Unmatched: {job.checkpoint_json.render_stats.unmatched_spans || 0}
+                    {" | "}Failed batches: {job.checkpoint_json.render_stats.failed_batches || 0}
+                  </div>
+                )}
+
+                {job.checkpoint_json?.model_warning && (
+                  <div style={{ marginTop: "4px", fontSize: "11px", color: "#ffc107", background: "rgba(255,193,7,0.1)", padding: "4px 8px", borderRadius: "4px" }}>
+                    {job.checkpoint_json.model_warning}
+                  </div>
+                )}
+
+                {job.checkpoint_json?.quality_warning && (
+                  <div style={{ marginTop: "4px", fontSize: "11px", color: "#f5576c", background: "rgba(245,87,108,0.1)", padding: "4px 8px", borderRadius: "4px" }}>
+                    {job.checkpoint_json.quality_warning}
                   </div>
                 )}
 
