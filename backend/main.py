@@ -3,18 +3,48 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 
 from core.config import settings
+from core.auth import has_admin_access, is_private_access_enabled, is_request_authenticated
 from storage.database import init_db
-from api import chat, models, conversations, system, distillation, documents, dashboard, graph, agent, openai_compat, export_import, threads, training, academic, quantize
+from api import academic, agent, auth, chat, conversations, dashboard, distillation, documents, export_import, graph, models, openai_compat, quantize, system, threads, training
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+FEATURE_GATES = (
+    ("agent_enabled", "/api/agent"),
+    ("training_enabled", "/api/training"),
+    ("quantize_enabled", "/api/quantize"),
+    ("academic_enabled", "/api/academic"),
+    ("export_import_enabled", "/api/export"),
+)
+
+ADMIN_ROUTE_RULES = (
+    ({"POST", "PUT", "DELETE"}, "/api/runtime"),
+    ({"PUT"}, "/api/settings"),
+    ({"POST"}, "/api/system/profile"),
+    ({"POST"}, "/api/models/pull"),
+    ({"DELETE"}, "/api/models"),
+    ({"*"}, "/api/training"),
+    ({"*"}, "/api/quantize"),
+    ({"*"}, "/api/export"),
+)
+
+PUBLIC_ROUTE_PREFIXES = (
+    "/api/auth",
+)
+
+PUBLIC_ROUTE_PATHS = {
+    "/api/health",
+}
 
 # Multipart parser can produce extremely verbose per-chunk debug logs on file upload.
 logging.getLogger("python_multipart").setLevel(logging.INFO)
@@ -26,6 +56,29 @@ class _WarmupResult:
     content: str
     score: float = 0.0
     section_title: str = ""
+
+
+def _path_matches(prefix: str, path: str) -> bool:
+    return path == prefix or path.startswith(f"{prefix}/")
+
+
+def _feature_enabled(setting_name: str) -> bool:
+    return bool(getattr(settings, setting_name, True))
+
+
+def _requires_admin_token(method: str, path: str) -> bool:
+    normalized_method = method.upper()
+    normalized_path = path.rstrip("/") or "/"
+    for methods, prefix in ADMIN_ROUTE_RULES:
+        if _path_matches(prefix, normalized_path) and ("*" in methods or normalized_method in methods):
+            return True
+    return False
+
+
+def _is_public_route(path: str) -> bool:
+    if path in PUBLIC_ROUTE_PATHS:
+        return True
+    return any(_path_matches(prefix, path) for prefix in PUBLIC_ROUTE_PREFIXES)
 
 
 async def _run_cold_start_warmup():
@@ -86,6 +139,35 @@ async def lifespan(app: FastAPI):
     warmup_task: asyncio.Task | None = None
 
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    logger.info(
+        "Paths: base_dir=%s data_dir=%s db_path=%s",
+        settings.base_dir,
+        settings.data_dir,
+        settings.db_path,
+    )
+    logger.info(
+        "Network: public_base_url=%s host=%s port=%s ollama_base_url=%s",
+        settings.public_base_url,
+        settings.host,
+        settings.port,
+        settings.ollama_base_url,
+    )
+    logger.info(
+        "CORS: origins=%s regex=%s allowed_hosts=%s",
+        settings.cors_origins,
+        settings.cors_origin_regex,
+        settings.allowed_hosts,
+    )
+    logger.info(
+        "Features: agent=%s academic=%s export_import=%s training=%s quantize=%s runtime=%s",
+        settings.agent_enabled,
+        settings.academic_enabled,
+        settings.export_import_enabled,
+        settings.training_enabled,
+        settings.quantize_enabled,
+        settings.runtime_management_enabled,
+    )
+    logger.info("Admin route protection: %s", "enabled" if settings.admin_api_token else "disabled")
     await init_db()
     logger.info("Database initialized")
 
@@ -198,10 +280,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+if settings.allowed_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -211,6 +297,7 @@ app.add_middleware(
 app.include_router(chat.router, prefix="/api", tags=["Chat"])
 app.include_router(models.router, prefix="/api", tags=["Models"])
 app.include_router(conversations.router, prefix="/api", tags=["Conversations"])
+app.include_router(auth.router, tags=["Auth"])
 app.include_router(system.router, prefix="/api", tags=["System"])
 app.include_router(distillation.router, tags=["Distillation"])
 app.include_router(documents.router, tags=["Documents"])
@@ -223,6 +310,37 @@ app.include_router(threads.router, tags=["Threads"])
 app.include_router(training.router, tags=["Training"])
 app.include_router(academic.router, tags=["Academic"])
 app.include_router(quantize.router, tags=["Quantize"])
+
+
+@app.middleware("http")
+async def deployment_guard_middleware(request: Request, call_next):
+    if request.method.upper() == "OPTIONS":
+        return await call_next(request)
+
+    path = request.url.path.rstrip("/") or "/"
+
+    if is_private_access_enabled() and not _is_public_route(path) and not is_request_authenticated(request):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Owner authentication required"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    for setting_name, prefix in FEATURE_GATES:
+        if not _feature_enabled(setting_name) and _path_matches(prefix, path):
+            return JSONResponse(status_code=404, content={"detail": "Feature disabled"})
+
+    if not settings.runtime_management_enabled and _path_matches("/api/runtime", path):
+        return JSONResponse(status_code=404, content={"detail": "Runtime management disabled"})
+
+    if _requires_admin_token(request.method, path) and not has_admin_access(request):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Admin token required"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return await call_next(request)
 
 
 # Dashboard metrics middleware

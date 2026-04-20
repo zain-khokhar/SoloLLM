@@ -1,0 +1,3 @@
+# Optional OCR / tooling extras that are not required for the base Ubuntu deployment.
+easyocr==1.7.2
+gguf>=0.10.0

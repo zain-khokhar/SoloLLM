@@ -227,15 +227,18 @@ class OllamaManager:
     def _extract_tgz(self, data: bytes) -> None:
         """Extract Ollama from a tar.gz archive (Linux)."""
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
-            for member in tf.getmembers():
-                basename = Path(member.name).name.lower()
-                if basename == "ollama" and member.isfile():
-                    f = tf.extractfile(member)
-                    if f:
-                        self.binary_path.write_bytes(f.read())
-                    return
-            # Fallback: extract all
             tf.extractall(self._binary_dir, filter="data")
+
+        if self.binary_path.exists():
+            return
+
+        for candidate in self._binary_dir.rglob("ollama"):
+            if candidate.is_file():
+                shutil.copy2(candidate, self.binary_path)
+                self.binary_path.chmod(0o755)
+                return
+
+        raise FileNotFoundError("Could not locate Ollama binary after Linux archive extraction")
 
     async def _start(self) -> bool:
         """Start Ollama as a subprocess."""
@@ -256,12 +259,9 @@ class OllamaManager:
             from core.max_power_runner import MaxPowerRunner
             mp_env = MaxPowerRunner.get_server_env()
             env.update(mp_env)
-            # Tell Ollama where to find CUDA and CPU backend DLLs
-            # In v0.6+, libraries are at lib/ollama/ relative to binary
-            lib_dir = str(self._binary_dir / "lib" / "ollama")
-            env["OLLAMA_LLM_LIBRARY"] = "cuda_v12"  # Force CUDA 12.x (matches driver 573.71)
             logger.info(f"[MaxPower] Server env applied: {mp_env}")
-            logger.info(f"[MaxPower] Lib dir: {lib_dir}, forcing cuda_v12")
+            if env.get("OLLAMA_LLM_LIBRARY"):
+                logger.info(f"[MaxPower] Using OLLAMA_LLM_LIBRARY={env['OLLAMA_LLM_LIBRARY']}")
         else:
             env["OLLAMA_NUM_PARALLEL"] = "1"
 

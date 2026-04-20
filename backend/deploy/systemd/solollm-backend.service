@@ -1,0 +1,19 @@
+[Unit]
+Description=SoloLLM FastAPI Backend
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=solollm
+Group=solollm
+WorkingDirectory=/opt/solollm-backend
+EnvironmentFile=/etc/solollm-backend.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/solollm-backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --proxy-headers
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

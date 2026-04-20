@@ -30,6 +30,31 @@ async def runtime_status():
     }
 
 
+@router.get("/capabilities")
+async def get_capabilities():
+    """Expose deployment flags so the frontend and operators can adapt to server mode."""
+    return {
+        "deployment": {
+            "public_base_url": settings.public_base_url,
+            "admin_route_protection": bool(settings.admin_api_token),
+            "private_access_enabled": settings.private_access_enabled and bool(settings.owner_password),
+            "runtime_management_enabled": settings.runtime_management_enabled,
+        },
+        "features": {
+            "agent": settings.agent_enabled,
+            "academic": settings.academic_enabled,
+            "export_import": settings.export_import_enabled,
+            "training": settings.training_enabled,
+            "quantize": settings.quantize_enabled,
+        },
+        "network": {
+            "cors_origins": settings.cors_origins,
+            "cors_origin_regex": settings.cors_origin_regex,
+            "allowed_hosts": settings.allowed_hosts,
+        },
+    }
+
+
 @router.post("/runtime/setup")
 async def runtime_setup():
     """Trigger Ollama download + start (for first-time setup)."""
