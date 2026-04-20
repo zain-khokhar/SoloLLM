@@ -332,6 +332,44 @@ export interface RuntimeStatus {
   auto_start_enabled: boolean;
 }
 
+export interface AuthConfig {
+  private_access_enabled: boolean;
+  owner_username: string;
+  session_ttl_hours: number;
+  admin_token_enabled: boolean;
+  public_base_url: string;
+}
+
+export interface AuthSession {
+  authenticated: boolean;
+  private_access_enabled: boolean;
+  owner_username: string;
+  expires_at: string | null;
+  authenticated_via: "session" | "owner_password" | "admin_token" | "disabled" | null;
+  admin_token_enabled: boolean;
+}
+
+export interface BackendCapabilities {
+  deployment: {
+    public_base_url: string;
+    admin_route_protection: boolean;
+    private_access_enabled: boolean;
+    runtime_management_enabled: boolean;
+  };
+  features: {
+    agent: boolean;
+    academic: boolean;
+    export_import: boolean;
+    training: boolean;
+    quantize: boolean;
+  };
+  network: {
+    cors_origins: string[];
+    cors_origin_regex: string | null;
+    allowed_hosts: string[];
+  };
+}
+
 export interface CatalogModel {
   name: string;
   display_name: string;
@@ -425,11 +463,17 @@ export interface Citation {
   excerpt: string;
 }
 
+export interface EmbeddingInfo {
+  model: string;
+  dimension: number;
+  fallback: boolean;
+}
+
 export interface RAGStats {
   workspace_id: string;
   document_count: number;
   chunk_count: number;
-  embedding_info: Record<string, unknown>;
+  embedding_info: EmbeddingInfo;
 }
 
 // ── Training types ──────────────────────────────────────────

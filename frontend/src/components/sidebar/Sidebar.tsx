@@ -20,6 +20,7 @@ import {
   BookOpen,
   Layers,
   X,
+  LogOut,
 } from "lucide-react";
 import { Conversation, ModelInfo } from "@/types";
 import { listConversations, deleteConversation, listModels, deleteModel } from "@/lib/api";
@@ -37,6 +38,14 @@ interface SidebarProps {
   onOpenTraining: () => void;
   onOpenAcademic: () => void;
   onOpenQuantize: () => void;
+  onLogout: () => void;
+  featureVisibility: {
+    agent: boolean;
+    training: boolean;
+    academic: boolean;
+    quantize: boolean;
+    exportImport: boolean;
+  };
   refreshTrigger: number;
 }
 
@@ -61,6 +70,8 @@ export default function Sidebar({
   onOpenTraining,
   onOpenAcademic,
   onOpenQuantize,
+  onLogout,
+  featureVisibility,
   refreshTrigger,
 }: SidebarProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -163,16 +174,18 @@ export default function Sidebar({
         <div className="flex-1" />
 
         {[
-          { icon: Brain, action: onOpenGraph, title: "Memory" },
-          { icon: Bot, action: onOpenAgent, title: "Agent" },
-          { icon: Activity, action: onOpenDashboard, title: "Dashboard" },
-          { icon: HardDrive, action: onOpenModels, title: "Models" },
-          { icon: GraduationCap, action: onOpenTraining, title: "Training" },
-          { icon: BookOpen, action: onOpenAcademic, title: "Academic" },
-          { icon: Layers, action: onOpenQuantize, title: "Quantizer" },
-          { icon: ArrowDownUp, action: onOpenExport, title: "Export" },
-          { icon: Settings, action: onOpenSettings, title: "Settings" },
-        ].map(({ icon: Icon, action, title }) => (
+          { icon: Brain, action: onOpenGraph, title: "Memory", visible: true },
+          { icon: Bot, action: onOpenAgent, title: "Agent", visible: featureVisibility.agent },
+          { icon: Activity, action: onOpenDashboard, title: "Dashboard", visible: true },
+          { icon: HardDrive, action: onOpenModels, title: "Models", visible: true },
+          { icon: GraduationCap, action: onOpenTraining, title: "Training", visible: featureVisibility.training },
+          { icon: BookOpen, action: onOpenAcademic, title: "Academic", visible: featureVisibility.academic },
+          { icon: Layers, action: onOpenQuantize, title: "Quantizer", visible: featureVisibility.quantize },
+          { icon: ArrowDownUp, action: onOpenExport, title: "Export", visible: featureVisibility.exportImport },
+          { icon: Settings, action: onOpenSettings, title: "Settings", visible: true },
+        ]
+          .filter((item) => item.visible)
+          .map(({ icon: Icon, action, title }) => (
           <button
             key={title}
             onClick={action}
@@ -182,7 +195,16 @@ export default function Sidebar({
           >
             <Icon size={15} />
           </button>
-        ))}
+          ))}
+
+        <button
+          onClick={onLogout}
+          className="p-2 rounded-lg transition-smooth hover-btn"
+          style={{ color: "var(--text-muted)" }}
+          title="Logout"
+        >
+          <LogOut size={15} />
+        </button>
       </div>
     );
   }
@@ -190,14 +212,14 @@ export default function Sidebar({
   // ── nav items ──
   const navItems = [
     { icon: Brain, label: "Memory Inspector", action: onOpenGraph },
-    { icon: Bot, label: "Agent Mode", action: onOpenAgent },
+    { icon: Bot, label: "Agent Mode", action: onOpenAgent, visible: featureVisibility.agent },
     { icon: Activity, label: "Dashboard", action: onOpenDashboard },
-    { icon: GraduationCap, label: "Self-Training", action: onOpenTraining },
-    { icon: BookOpen, label: "Academic Studio", action: onOpenAcademic },
-    { icon: Layers, label: "Quantizer", action: onOpenQuantize },
-    { icon: ArrowDownUp, label: "Export / Import", action: onOpenExport },
+    { icon: GraduationCap, label: "Self-Training", action: onOpenTraining, visible: featureVisibility.training },
+    { icon: BookOpen, label: "Academic Studio", action: onOpenAcademic, visible: featureVisibility.academic },
+    { icon: Layers, label: "Quantizer", action: onOpenQuantize, visible: featureVisibility.quantize },
+    { icon: ArrowDownUp, label: "Export / Import", action: onOpenExport, visible: featureVisibility.exportImport },
     { icon: Settings, label: "Settings", action: onOpenSettings },
-  ];
+  ].filter((item) => item.visible ?? true);
 
   return (
     <div
@@ -521,6 +543,21 @@ export default function Sidebar({
             </div>
           )}
         </div>
+      </div>
+
+      <div className="px-2.5 py-2" style={{ borderTop: "1px solid var(--border-color)" }}>
+        <button
+          onClick={onLogout}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-smooth"
+          style={{
+            background: "var(--bg-tertiary)",
+            color: "var(--text-secondary)",
+            border: "1px solid var(--border-color)",
+          }}
+        >
+          <LogOut size={13} />
+          Logout
+        </button>
       </div>
     </div>
   );

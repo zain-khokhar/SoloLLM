@@ -17,6 +17,7 @@ import {
   importConversations,
   exportSettings,
   importSettings,
+  OPENAI_COMPAT_BASE_URL,
 } from "@/lib/api";
 
 interface ExportImportViewProps {
@@ -331,7 +332,7 @@ export default function ExportImportView({
                 style={{ color: "var(--text-secondary)" }}
               >
                 <span style={{ color: "var(--text-muted)" }}>Base URL:</span>{" "}
-                http://localhost:8000/v1
+                {OPENAI_COMPAT_BASE_URL}
               </p>
             </div>
           </div>

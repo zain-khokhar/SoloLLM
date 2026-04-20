@@ -54,6 +54,13 @@ export interface AcademicAiLog {
   error?: string;
 }
 
+export interface AcademicRenderStats {
+  match_rate?: number;
+  highlight_count?: number;
+  unmatched_spans?: number;
+  failed_batches?: number;
+}
+
 export interface AcademicJob {
   id: string;
   course_id: string;
@@ -84,7 +91,10 @@ export interface AcademicJob {
       last_updated?: string;
       unmatched_spans?: number;
     };
+    render_stats?: AcademicRenderStats;
     ai_logs?: AcademicAiLog[];
+    model_warning?: string;
+    quality_warning?: string;
   };
   error: string | null;
   started_at: string | null;

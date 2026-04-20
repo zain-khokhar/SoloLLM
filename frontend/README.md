@@ -1,4 +1,4 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This frontend is designed to talk directly to the Ubuntu-hosted FastAPI backend.
 
 ## Getting Started
 
@@ -16,23 +16,37 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## API Architecture (Recommended)
+## API Architecture
 
-- Standard API calls use Next proxy path `/api/*`.
-- Large document uploads use direct backend URL to avoid proxy body buffering limits.
+- Local development talks directly to `http://127.0.0.1:8000/api` unless you override it.
+- Vercel production should point directly at the public HTTPS Ubuntu backend URL.
+- Uploads and standard API calls use the same backend origin.
 
 Environment variables:
 
 ```bash
-# Optional: base for normal API calls (defaults to /api)
-NEXT_PUBLIC_API_BASE_URL=/api
+# Browser-visible API base.
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api
 
-# Optional: direct backend for large uploads
-# Defaults to http://localhost:8000/api in development
-NEXT_PUBLIC_UPLOAD_API_BASE_URL=http://localhost:8000/api
+# Optional display/base URL for the OpenAI-compatible endpoint.
+# If omitted, it is derived from NEXT_PUBLIC_API_BASE_URL.
+NEXT_PUBLIC_OPENAI_COMPAT_BASE_URL=http://127.0.0.1:8000/v1
 ```
 
-If you change `next.config.ts`, restart the Next dev server.
+### Local development
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api
+```
+
+### Vercel production
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=https://api.your-domain.com/api
+NEXT_PUBLIC_OPENAI_COMPAT_BASE_URL=https://api.your-domain.com/v1
+```
+
+When the backend runs with `SOLOLLM_PRIVATE_ACCESS_ENABLED=true`, the frontend will show the owner login screen automatically. No extra Vercel auth environment variable is required for that flow.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
@@ -49,6 +63,6 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Set the production environment variables above in Vercel, deploy the frontend, and make sure the Ubuntu backend is reachable over HTTPS with CORS configured for your Vercel domain.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Check out the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for platform-specific details.

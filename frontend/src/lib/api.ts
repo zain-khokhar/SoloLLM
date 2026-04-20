@@ -21,6 +21,9 @@ import {
   DashboardSummary,
   ImportResult,
   RuntimeStatus,
+  AuthConfig,
+  AuthSession,
+  BackendCapabilities,
   ModelCatalogResponse,
   Thread,
   ThreadSettings,
@@ -34,26 +37,194 @@ import {
   FinetunedModel,
 } from "@/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
+function normalizeBaseUrl(value: string): string {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
 
-// Large multipart uploads are sent directly to backend to avoid Next proxy buffering limits.
-const UPLOAD_API_BASE =
-  process.env.NEXT_PUBLIC_UPLOAD_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://localhost:8000/api";
+function deriveOpenAICompatBaseUrl(apiBase: string): string {
+  const normalized = normalizeBaseUrl(apiBase);
+  if (normalized.endsWith("/api")) {
+    return `${normalized.slice(0, -4)}/v1`;
+  }
+  return normalized;
+}
+
+export const API_BASE = normalizeBaseUrl(
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api"
+);
+export const OPENAI_COMPAT_BASE_URL = normalizeBaseUrl(
+  process.env.NEXT_PUBLIC_OPENAI_COMPAT_BASE_URL ||
+    deriveOpenAICompatBaseUrl(API_BASE)
+);
+const AUTH_STORAGE_KEY = "solollm.ownerSessionToken";
+const AUTH_REQUIRED_EVENT = "solollm-auth-required";
+
+const UPLOAD_API_BASE = API_BASE;
+
+export class UnauthorizedError extends Error {
+  status: number;
+
+  constructor(message: string = "Authentication required") {
+    super(message);
+    this.name = "UnauthorizedError";
+    this.status = 401;
+  }
+}
+
+function isBrowser(): boolean {
+  return typeof window !== "undefined";
+}
+
+function getStoredAuthToken(): string {
+  if (!isBrowser()) {
+    return "";
+  }
+  return window.localStorage.getItem(AUTH_STORAGE_KEY) || "";
+}
+
+export function setStoredAuthToken(token: string | null): void {
+  if (!isBrowser()) {
+    return;
+  }
+  if (token) {
+    window.localStorage.setItem(AUTH_STORAGE_KEY, token);
+  } else {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+}
+
+export function clearStoredAuthToken(): void {
+  setStoredAuthToken(null);
+}
+
+export function addAuthRequiredListener(listener: () => void): () => void {
+  if (!isBrowser()) {
+    return () => {};
+  }
+
+  const handler = () => listener();
+  window.addEventListener(AUTH_REQUIRED_EVENT, handler);
+  return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handler);
+}
+
+function notifyAuthRequired(): void {
+  clearStoredAuthToken();
+  if (isBrowser()) {
+    window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
+  }
+}
+
+function buildAuthHeaders(
+  headers?: HeadersInit,
+  includeJsonContentType: boolean = false
+): Headers {
+  const merged = new Headers(headers);
+  if (includeJsonContentType && !merged.has("Content-Type")) {
+    merged.set("Content-Type", "application/json");
+  }
+
+  const token = getStoredAuthToken();
+  if (token && !merged.has("Authorization")) {
+    merged.set("Authorization", `Bearer ${token}`);
+  }
+
+  return merged;
+}
+
+async function readErrorMessage(
+  res: Response,
+  fallback: string
+): Promise<string> {
+  const error = await res.json().catch(() => ({ detail: fallback }));
+  return error.detail || fallback;
+}
+
+async function fetchWithAuth(
+  input: string,
+  options?: RequestInit,
+  includeJsonContentType: boolean = false
+): Promise<Response> {
+  const res = await fetch(input, {
+    ...options,
+    headers: buildAuthHeaders(options?.headers, includeJsonContentType),
+  });
+
+  if (res.status === 401) {
+    const detail = await readErrorMessage(res, "Authentication required");
+    notifyAuthRequired();
+    throw new UnauthorizedError(detail);
+  }
+
+  return res;
+}
+
+function buildAuthorizedUrl(url: string): string {
+  const token = getStoredAuthToken();
+  if (!token || !isBrowser()) {
+    return url;
+  }
+
+  const resolved = new URL(url, window.location.origin);
+  resolved.searchParams.set("access_token", token);
+  return resolved.toString();
+}
 
 // ── REST helpers ───────────────────────────────────────────
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${url}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const res = await fetchWithAuth(`${API_BASE}${url}`, options, true);
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || `Request failed: ${res.status}`);
+    throw new Error(await readErrorMessage(res, `Request failed: ${res.status}`));
   }
   return res.json();
+}
+
+export async function getAuthConfig(): Promise<AuthConfig> {
+  const res = await fetch(`${API_BASE}/auth/config`);
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, `Request failed: ${res.status}`));
+  }
+  return res.json();
+}
+
+export async function getAuthSession(): Promise<AuthSession> {
+  const res = await fetchWithAuth(`${API_BASE}/auth/session`);
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, `Request failed: ${res.status}`));
+  }
+  return res.json();
+}
+
+export async function loginOwner(
+  username: string,
+  password: string
+): Promise<AuthSession & { token: string }> {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, "Login failed"));
+  }
+  const data = (await res.json()) as AuthSession & { token: string };
+  if (data.token) {
+    setStoredAuthToken(data.token);
+  }
+  return data;
+}
+
+export async function logoutOwner(): Promise<void> {
+  try {
+    await fetchWithAuth(`${API_BASE}/auth/logout`, { method: "POST" });
+  } catch {
+    // Ignore logout transport failures; local token cleanup still matters.
+  }
+  clearStoredAuthToken();
+}
+
+export async function getBackendCapabilities(): Promise<BackendCapabilities> {
+  return fetchJSON("/capabilities");
 }
 
 // ── Health ─────────────────────────────────────────────────
@@ -173,7 +344,7 @@ export function streamSetupProgress(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/runtime/setup/progress`, {
+  fetchWithAuth(`${API_BASE}/runtime/setup/progress`, {
     signal: controller.signal,
   })
     .then(async (res) => {
@@ -235,12 +406,15 @@ export function streamModelPull(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/models/pull`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: modelName }),
-    signal: controller.signal,
-  })
+  fetchWithAuth(
+    `${API_BASE}/models/pull`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name: modelName }),
+      signal: controller.signal,
+    },
+    true
+  )
     .then(async (res) => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -334,12 +508,15 @@ export function streamChat(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-    signal: controller.signal,
-  })
+  fetchWithAuth(
+    `${API_BASE}/chat`,
+    {
+      method: "POST",
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    },
+    true
+  )
     .then(async (res) => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -412,12 +589,15 @@ export function streamContinuation(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/chat/continue`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-    signal: controller.signal,
-  })
+  fetchWithAuth(
+    `${API_BASE}/chat/continue`,
+    {
+      method: "POST",
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    },
+    true
+  )
     .then(async (res) => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -503,12 +683,15 @@ export function streamWebSearch(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/chat/web-search`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-    signal: controller.signal,
-  })
+  fetchWithAuth(
+    `${API_BASE}/chat/web-search`,
+    {
+      method: "POST",
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    },
+    true
+  )
     .then(async (res) => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -748,12 +931,15 @@ export function streamAgentRun(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/agent/run/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-    signal: controller.signal,
-  })
+  fetchWithAuth(
+    `${API_BASE}/agent/run/stream`,
+    {
+      method: "POST",
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    },
+    true
+  )
     .then(async (res) => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -893,7 +1079,7 @@ export async function getDashboardRecent(
 // ── Export / Import API (Phase 6) ─────────────────────────
 
 export async function exportConversations(): Promise<void> {
-  const res = await fetch(`${API_BASE}/export/conversations`);
+  const res = await fetchWithAuth(`${API_BASE}/export/conversations`);
   if (!res.ok) throw new Error("Export failed");
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -909,7 +1095,7 @@ export async function exportConversations(): Promise<void> {
 export async function importConversations(file: File): Promise<ImportResult> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${API_BASE}/export/conversations/import`, {
+  const res = await fetchWithAuth(`${API_BASE}/export/conversations/import`, {
     method: "POST",
     body: formData,
   });
@@ -921,7 +1107,7 @@ export async function importConversations(file: File): Promise<ImportResult> {
 }
 
 export async function exportSettings(): Promise<void> {
-  const res = await fetch(`${API_BASE}/export/settings`);
+  const res = await fetchWithAuth(`${API_BASE}/export/settings`);
   if (!res.ok) throw new Error("Export failed");
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -937,7 +1123,7 @@ export async function exportSettings(): Promise<void> {
 export async function importSettings(file: File): Promise<{ success: boolean; imported_keys: string[] }> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${API_BASE}/export/settings/import`, {
+  const res = await fetchWithAuth(`${API_BASE}/export/settings/import`, {
     method: "POST",
     body: formData,
   });
@@ -1067,7 +1253,7 @@ export async function uploadDocument(
   const formData = new FormData();
   formData.append("file", file);
   formData.append("workspace_id", workspaceId);
-  const res = await fetch(`${UPLOAD_API_BASE}/documents/upload`, {
+  const res = await fetchWithAuth(`${UPLOAD_API_BASE}/documents/upload`, {
     method: "POST",
     body: formData,
   });
@@ -1231,7 +1417,7 @@ import type {
 export async function academicBulkImport(files: File[]): Promise<BulkImportResult> {
   const formData = new FormData();
   files.forEach((f) => formData.append("files", f));
-  const res = await fetch(`${UPLOAD_API_BASE}/academic/courses/bulk-import`, {
+  const res = await fetchWithAuth(`${UPLOAD_API_BASE}/academic/courses/bulk-import`, {
     method: "POST",
     body: formData,
   });
@@ -1246,7 +1432,7 @@ export async function academicUploadPdf(file: File, courseCode: string): Promise
   const formData = new FormData();
   formData.append("file", file);
   formData.append("course_code", courseCode);
-  const res = await fetch(`${UPLOAD_API_BASE}/academic/courses/upload-pdf`, {
+  const res = await fetchWithAuth(`${UPLOAD_API_BASE}/academic/courses/upload-pdf`, {
     method: "POST",
     body: formData,
   });
@@ -1269,7 +1455,7 @@ export async function academicUploadReviews(file: File, courseCode: string): Pro
   const formData = new FormData();
   formData.append("file", file);
   formData.append("course_code", courseCode);
-  const res = await fetch(`${UPLOAD_API_BASE}/academic/reviews/upload`, {
+  const res = await fetchWithAuth(`${UPLOAD_API_BASE}/academic/reviews/upload`, {
     method: "POST",
     body: formData,
   });
@@ -1365,7 +1551,7 @@ export async function academicGetJobPreview(jobId: string): Promise<any> {
 }
 
 export function academicPreviewDownloadUrl(jobId: string): string {
-  return `${UPLOAD_API_BASE}/academic/jobs/${jobId}/preview/download`;
+  return buildAuthorizedUrl(`${UPLOAD_API_BASE}/academic/jobs/${jobId}/preview/download`);
 }
 
 export async function academicListOutputs(
@@ -1379,7 +1565,7 @@ export async function academicListOutputs(
 }
 
 export function academicDownloadUrl(outputId: string): string {
-  return `${UPLOAD_API_BASE}/academic/outputs/${outputId}/download`;
+  return buildAuthorizedUrl(`${UPLOAD_API_BASE}/academic/outputs/${outputId}/download`);
 }
 
 export async function academicDeleteOutput(outputId: string): Promise<any> {
@@ -1514,7 +1700,7 @@ export async function uploadGGUF(
   formData.append("file", file);
   if (modelName) formData.append("model_name", modelName);
 
-  const res = await fetch(`${UPLOAD_API_BASE}/quantize/upload-gguf`, {
+  const res = await fetchWithAuth(`${UPLOAD_API_BASE}/quantize/upload-gguf`, {
     method: "POST",
     body: formData,
   });
@@ -1534,7 +1720,7 @@ export function streamQuantizeSetup(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/quantize/setup-tools`, {
+  fetchWithAuth(`${API_BASE}/quantize/setup-tools`, {
     method: "POST",
     signal: controller.signal,
   })
@@ -1600,7 +1786,7 @@ export function streamQuantizeJob(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/quantize/jobs/${jobId}/stream`, {
+  fetchWithAuth(`${API_BASE}/quantize/jobs/${jobId}/stream`, {
     signal: controller.signal,
   })
     .then(async (res) => {

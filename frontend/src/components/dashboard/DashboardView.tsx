@@ -12,37 +12,12 @@ import {
   RefreshCw,
   Loader2,
 } from "lucide-react";
+import { getDashboardSummary } from "@/lib/api";
+import type { DashboardSummary } from "@/types";
 
 interface DashboardViewProps {
   onBack: () => void;
 }
-
-interface DashboardSummary {
-  uptime_seconds: number;
-  total_requests: number;
-  total_tokens_in: number;
-  total_tokens_out: number;
-  total_tokens: number;
-  avg_latency_ms: number;
-  min_latency_ms: number;
-  max_latency_ms: number;
-  p95_latency_ms: number;
-  error_rate: number;
-  requests_per_minute: number;
-  model_stats: Record<
-    string,
-    { requests: number; tokens_in: number; tokens_out: number; avg_latency_ms: number }
-  >;
-  endpoint_stats: Record<string, number>;
-  system?: {
-    cpu_percent: number;
-    memory_percent: number;
-    memory_used_mb: number;
-    memory_total_mb: number;
-  };
-}
-
-const API_BASE = "/api";
 
 export default function DashboardView({ onBack }: DashboardViewProps) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -51,10 +26,7 @@ export default function DashboardView({ onBack }: DashboardViewProps) {
 
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/dashboard/summary`);
-      if (res.ok) {
-        setSummary(await res.json());
-      }
+      setSummary(await getDashboardSummary());
     } catch {
       // Backend might not be running
     }

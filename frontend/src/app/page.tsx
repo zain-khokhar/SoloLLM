@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import Sidebar from "@/components/sidebar/Sidebar";
+import OwnerLoginView from "@/components/auth/OwnerLoginView";
 import ChatArea from "@/components/chat/ChatArea";
 import ChatInput from "@/components/chat/ChatInput";
 import ModelSelector from "@/components/chat/ModelSelector";
@@ -16,8 +17,8 @@ import ModelPicker from "@/components/setup/ModelPicker";
 import TrainingView from "@/components/training/TrainingView";
 import AcademicStudio from "@/components/academic/AcademicStudio";
 import ModelQuantizer from "@/components/quantize/ModelQuantizer";
-import { streamChat, streamWebSearch, getConversation, getThread, getSettings, updateSettings, getSystemProfile, runProfiler, checkHealth, listModels, uploadDocument, attachDocumentToThread, getThreadDocuments, listDocuments, detachDocumentFromThread } from "@/lib/api";
-import { DistillationMeta, Thread, DocumentInfo } from "@/types";
+import { addAuthRequiredListener, checkHealth, clearStoredAuthToken, getAuthConfig, getAuthSession, getBackendCapabilities, getConversation, getSettings, getSystemProfile, getThread, getThreadDocuments, listDocuments, listModels, loginOwner, logoutOwner, runProfiler, streamChat, streamWebSearch, updateSettings, uploadDocument, attachDocumentToThread, detachDocumentFromThread } from "@/lib/api";
+import { AuthConfig, BackendCapabilities, DistillationMeta, Thread, DocumentInfo } from "@/types";
 import {
   ArrowLeft,
   RefreshCw,
@@ -40,9 +41,42 @@ interface ChatMessage {
   content: string;
 }
 
+type AppView =
+  | "chat"
+  | "settings"
+  | "graph"
+  | "agent"
+  | "dashboard"
+  | "export"
+  | "models"
+  | "training"
+  | "academic"
+  | "quantize";
+
+function isViewEnabled(view: AppView, capabilities: BackendCapabilities | null): boolean {
+  if (!capabilities) {
+    return true;
+  }
+
+  switch (view) {
+    case "agent":
+      return capabilities.features.agent;
+    case "export":
+      return capabilities.features.export_import;
+    case "training":
+      return capabilities.features.training;
+    case "academic":
+      return capabilities.features.academic;
+    case "quantize":
+      return capabilities.features.quantize;
+    default:
+      return true;
+  }
+}
+
 export default function Home() {
   const [showSetup, setShowSetup] = useState<boolean | null>(null); // null = checking
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "graph" | "agent" | "dashboard" | "export" | "models" | "training" | "academic" | "quantize">("chat");
+  const [currentView, setCurrentView] = useState<AppView>("chat");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -59,7 +93,47 @@ export default function Home() {
   const [threadDocuments, setThreadDocuments] = useState<{ document_id: string; filename: string }[]>([]);
   const [allDocuments, setAllDocuments] = useState<DocumentInfo[]>([]);
   const [contextLimit, setContextLimit] = useState<number | null>(null);
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authenticating, setAuthenticating] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState<BackendCapabilities | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const privateAccessEnabled = authConfig?.private_access_enabled ?? false;
+  const featureVisibility = {
+    agent: capabilities?.features.agent ?? false,
+    training: capabilities?.features.training ?? false,
+    academic: capabilities?.features.academic ?? false,
+    quantize: capabilities?.features.quantize ?? false,
+    exportImport: capabilities?.features.export_import ?? false,
+  };
+
+  const bootstrapAuth = useCallback(async () => {
+    setAuthReady(false);
+    setAuthError(null);
+    try {
+      const config = await getAuthConfig();
+      setAuthConfig(config);
+
+      if (!config.private_access_enabled) {
+        setIsAuthenticated(true);
+        return;
+      }
+
+      const session = await getAuthSession();
+      if (!session.authenticated) {
+        clearStoredAuthToken();
+      }
+      setIsAuthenticated(session.authenticated);
+    } catch {
+      setAuthError("Could not connect to the backend auth service.");
+      setIsAuthenticated(false);
+    } finally {
+      setAuthReady(true);
+    }
+  }, []);
 
   const refreshDocumentCatalog = useCallback(async () => {
     try {
@@ -93,35 +167,66 @@ export default function Home() {
     }
   }, [allDocuments]);
 
-  // Check if we need to show the setup wizard
   useEffect(() => {
+    void bootstrapAuth();
+  }, [bootstrapAuth]);
+
+  useEffect(() => {
+    return addAuthRequiredListener(() => {
+      setIsAuthenticated(false);
+      setCapabilities(null);
+      setShowThreadSettings(false);
+      setAuthError("Your owner session is no longer valid. Sign in again.");
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!authReady || (privateAccessEnabled && !isAuthenticated)) {
+      return;
+    }
+
     const checkSetup = async () => {
       try {
-        const health = await checkHealth();
+        setShowSetup(null);
+        const [deploymentCapabilities, health] = await Promise.all([
+          getBackendCapabilities().catch(() => null),
+          checkHealth(),
+        ]);
+        setCapabilities(deploymentCapabilities);
+
+        if (!deploymentCapabilities?.deployment.runtime_management_enabled && !health.ollama_connected) {
+          setShowSetup(false);
+          return;
+        }
+
         if (health.ollama_connected) {
-          // Ollama is running, check if any models installed
           const models = await listModels().catch(() => []);
           setShowSetup(models.length === 0);
           if (models.length > 0) {
             setSelectedModel((prev) => {
-              // If the current default isn't installed, pick the first available
               if (!models.some((m: { name: string }) => m.name === prev)) {
                 return models[0].name;
               }
               return prev;
             });
           }
-        } else {
-          // Ollama not connected — show setup
+        } else if (deploymentCapabilities?.deployment.runtime_management_enabled ?? true) {
           setShowSetup(true);
+        } else {
+          setShowSetup(false);
         }
       } catch {
-        // Backend not reachable — show setup
         setShowSetup(true);
       }
     };
-    checkSetup();
-  }, []);
+    void checkSetup();
+  }, [authReady, isAuthenticated, privateAccessEnabled]);
+
+  useEffect(() => {
+    if (currentView !== "chat" && !isViewEnabled(currentView, capabilities)) {
+      setCurrentView("chat");
+    }
+  }, [capabilities, currentView]);
 
   const handleNewChat = useCallback(() => {
     if (abortRef.current) abortRef.current.abort();
@@ -138,6 +243,30 @@ export default function Home() {
     setThreadDocuments([]);
     setCurrentView("chat");
   }, []);
+
+  const handleLogin = useCallback(async (username: string, password: string) => {
+    setAuthenticating(true);
+    setAuthError(null);
+    try {
+      await loginOwner(username, password);
+      setIsAuthenticated(true);
+      setShowSetup(null);
+    } catch (loginError) {
+      setIsAuthenticated(false);
+      setAuthError(loginError instanceof Error ? loginError.message : "Login failed");
+    } finally {
+      setAuthenticating(false);
+    }
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await logoutOwner();
+    handleNewChat();
+    setIsAuthenticated(false);
+    setCapabilities(null);
+    setShowSetup(null);
+    setAuthError(null);
+  }, [handleNewChat]);
 
   const handleSelectConversation = useCallback(async (id: string) => {
     try {
@@ -404,8 +533,19 @@ export default function Home() {
 
   return (
     <div className="flex h-screen">
-      {/* Setup wizard shown on first launch or when Ollama not available */}
-      {showSetup === null ? (
+      {!authReady ? (
+        <div className="flex-1 flex items-center justify-center" style={{ background: "var(--bg-primary)" }}>
+          <div className="w-8 h-8 rounded-lg animate-pulse" style={{ background: "var(--accent-muted)" }} />
+        </div>
+      ) : privateAccessEnabled && !isAuthenticated ? (
+        <OwnerLoginView
+          ownerUsername={authConfig?.owner_username || "admin"}
+          loading={authenticating}
+          error={authError}
+          publicBaseUrl={authConfig?.public_base_url}
+          onLogin={handleLogin}
+        />
+      ) : showSetup === null ? (
         <div className="flex-1 flex items-center justify-center" style={{ background: "var(--bg-primary)" }}>
           <div className="w-8 h-8 rounded-lg animate-pulse" style={{ background: "var(--accent-muted)" }} />
         </div>
@@ -426,6 +566,8 @@ export default function Home() {
         onOpenTraining={() => setCurrentView("training")}
         onOpenAcademic={() => setCurrentView("academic")}
         onOpenQuantize={() => setCurrentView("quantize")}
+        onLogout={handleLogout}
+        featureVisibility={featureVisibility}
         refreshTrigger={refreshSidebar}
       />
 
@@ -433,22 +575,22 @@ export default function Home() {
         <SettingsView onBack={() => setCurrentView("chat")} />
       ) : currentView === "graph" ? (
         <KnowledgeGraphView onBack={() => setCurrentView("chat")} />
-      ) : currentView === "agent" ? (
+      ) : currentView === "agent" && featureVisibility.agent ? (
         <AgentView onBack={() => setCurrentView("chat")} selectedModel={selectedModel} />
       ) : currentView === "dashboard" ? (
         <DashboardView onBack={() => setCurrentView("chat")} />
-      ) : currentView === "export" ? (
+      ) : currentView === "export" && featureVisibility.exportImport ? (
         <ExportImportView
           onBack={() => setCurrentView("chat")}
           onImportComplete={() => setRefreshSidebar((prev) => prev + 1)}
         />
-      ) : currentView === "training" ? (
+      ) : currentView === "training" && featureVisibility.training ? (
         <TrainingView onBack={() => setCurrentView("chat")} selectedModel={selectedModel} onSelectModel={setSelectedModel} />
-      ) : currentView === "academic" ? (
+      ) : currentView === "academic" && featureVisibility.academic ? (
         <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg-primary)" }}>
           <AcademicStudio />
         </div>
-      ) : currentView === "quantize" ? (
+      ) : currentView === "quantize" && featureVisibility.quantize ? (
         <ModelQuantizer onBack={() => setCurrentView("chat")} />
       ) : currentView === "models" ? (
         <div className="flex-1 flex flex-col h-screen" style={{ background: "var(--bg-primary)" }}>
@@ -647,7 +789,7 @@ function SettingsView({ onBack }: { onBack: () => void }) {
         setProfile(profileData as unknown as Record<string, unknown>);
         if (settingsData) {
           setFormData({
-            ollama_base_url: settingsData.ollama_base_url || "http://localhost:11434",
+            ollama_base_url: settingsData.ollama_base_url || "http://127.0.0.1:11434",
             default_model: settingsData.default_model || "llama3.2:latest",
             temperature: settingsData.temperature || 0.7,
             system_prompt: settingsData.system_prompt || "",

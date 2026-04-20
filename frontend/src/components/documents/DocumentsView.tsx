@@ -470,7 +470,7 @@ export default function DocumentsView({ onBack }: DocumentsViewProps) {
             <div className="space-y-1.5">
               {documents.map((doc, index) => (
                 <div
-                  key={doc.id}
+                  key={doc.document_id}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl group transition-smooth"
                   style={{
                     background: "var(--bg-secondary)",
@@ -519,7 +519,7 @@ export default function DocumentsView({ onBack }: DocumentsViewProps) {
                     {doc.file_type}
                   </span>
                   <button
-                    onClick={() => handleDelete(doc.id, doc.filename)}
+                    onClick={() => handleDelete(doc.document_id, doc.filename)}
                     className="opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-smooth shrink-0"
                     style={{ color: "var(--text-muted)" }}
                     onMouseEnter={(e) => {
